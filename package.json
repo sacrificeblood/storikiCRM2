@@ -1,7 +1,7 @@
 {
   "name": "adboard-server",
   "version": "1.0.0",
-  "description": "Ad campaign linking board — Node/Express backend with real login and Postgres storage",
+  "description": "Ad campaign linking board — Node/Express backend with shared Postgres storage (no login)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -12,9 +12,6 @@
   "dependencies": {
     "express": "^4.19.2",
     "pg": "^8.12.0",
-    "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
-    "cookie-parser": "^1.4.6",
     "dotenv": "^16.4.5"
   }
 }

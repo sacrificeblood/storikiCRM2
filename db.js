@@ -12,14 +12,6 @@ const pool = new Pool({
 
 async function initSchema(){
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      id SERIAL PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-  await pool.query(`
     CREATE TABLE IF NOT EXISTS board_state (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
