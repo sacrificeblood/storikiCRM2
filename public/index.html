@@ -191,7 +191,7 @@
 
   /* MODAL */
   .overlay{
-    position:fixed; inset:0; background:rgba(2,6,4,0.7);
+    position:fixed; inset:0; background:rgba(2,6,4,0.7); z-index:500;
     display:flex; align-items:center; justify-content:center; padding:16px;
   }
   .modal{
@@ -233,7 +233,7 @@
 
   .loading{padding:60px; text-align:center; color:var(--text-dim); font-size:14px;}
   .ctx-menu{
-    position:fixed; z-index:300; background:var(--panel); border:1px solid var(--border);
+    position:fixed; z-index:600; background:var(--panel); border:1px solid var(--border);
     border-radius:8px; box-shadow:0 12px 34px rgba(0,0,0,0.6); padding:6px; min-width:210px;
     display:flex; flex-direction:column; gap:2px;
   }
@@ -862,12 +862,12 @@
     }, 0);
   }
 
-  boardView.addEventListener('contextmenu', (e)=>{
+  boardView.addEventListener('contextmenu', safe((e)=>{
     if(e.target.closest('.note')){ removeContextMenu(); return; }
     e.preventDefault();
     const canvasPos = toCanvasCoords(e.clientX, e.clientY);
     showContextMenu(e.clientX, e.clientY, canvasPos);
-  });
+  }));
   // right-clicking anywhere outside the board should also tidy up a stray open menu
   document.addEventListener('contextmenu', (e)=>{
     if(!boardView.contains(e.target)) removeContextMenu();
@@ -1212,9 +1212,19 @@
     render();
   });
 
-  document.getElementById('addFanBtn').addEventListener('click', ()=>addNodePrompt('fan'));
-  document.getElementById('addCreBtn').addEventListener('click', ()=>addNodePrompt('cre'));
-  document.getElementById('manageLayersBtn').addEventListener('click', openLayerManager);
+  function safe(fn){
+    return function(...args){
+      try{ return fn.apply(this, args); }
+      catch(e){
+        console.error(e);
+        showToast('Ошибка: ' + e.message);
+      }
+    };
+  }
+
+  document.getElementById('addFanBtn').addEventListener('click', safe(()=>addNodePrompt('fan')));
+  document.getElementById('addCreBtn').addEventListener('click', safe(()=>addNodePrompt('cre')));
+  document.getElementById('manageLayersBtn').addEventListener('click', safe(openLayerManager));
   document.getElementById('resetBtn').addEventListener('click', ()=>{
     if(!confirm('Удалить ВСЕ данные доски (все слои, фанпейджи, креативы, связи)? Это необратимо.')) return;
     state = { layers: [], fanpages: [], creatives: [], links: [], currentLayerId: null };
