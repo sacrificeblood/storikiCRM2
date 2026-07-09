@@ -1,0 +1,1349 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Доска связок</title>
+<style>
+  :root{
+    --bg:#060a08;
+    --bg-2:#0a100c;
+    --panel:#0e1712;
+    --panel-2:#121c16;
+    --border:#1d2e24;
+    --border-soft:#16221b;
+    --green:#37e07f;
+    --green-dim:#1f8a52;
+    --green-glow:rgba(55,224,127,0.45);
+    --teal:#22c9a8;
+    --teal-glow:rgba(34,201,168,0.4);
+    --text:#dff5e6;
+    --text-dim:#7fa892;
+    --danger:#ff5d73;
+    --danger-glow:rgba(255,93,115,0.4);
+    --amber:#e8c15a;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    font-family:'Segoe UI', Tahoma, sans-serif;
+    color:var(--text);
+    background:
+      linear-gradient(rgba(55,224,127,0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(55,224,127,0.045) 1px, transparent 1px),
+      radial-gradient(ellipse at 30% 0%, rgba(55,224,127,0.08), transparent 55%),
+      radial-gradient(ellipse at 80% 100%, rgba(34,201,168,0.06), transparent 55%),
+      var(--bg);
+    background-size:36px 36px, 36px 36px, cover, cover, cover;
+    min-height:100vh;
+  }
+  #app{display:flex; flex-direction:column; min-height:100vh;}
+
+  header{
+    background:linear-gradient(180deg, #0b1310, #070c09);
+    padding:14px 22px;
+    display:flex; align-items:center; justify-content:space-between;
+    flex-wrap:wrap; gap:12px;
+    border-bottom:1px solid var(--border);
+    box-shadow:0 4px 24px rgba(0,0,0,0.5), 0 1px 0 rgba(55,224,127,0.15);
+    position:sticky; top:0; z-index:50;
+  }
+  header h1{
+    font-size:19px; margin:0; letter-spacing:0.4px; font-weight:700;
+    display:flex; align-items:center; gap:9px; color:var(--text);
+  }
+  header h1 .dot{
+    width:9px;height:9px;border-radius:50%;
+    background:var(--green); box-shadow:0 0 10px 2px var(--green-glow);
+    animation:pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:0.4;}}
+
+  .tabs{display:flex; gap:4px; background:var(--panel); padding:4px; border-radius:8px; border:1px solid var(--border);}
+  .tab-btn{
+    padding:7px 16px; border:none; border-radius:6px; cursor:pointer;
+    background:transparent; color:var(--text-dim); font-size:13px; font-weight:600;
+    transition:all .15s;
+  }
+  .tab-btn.active{background:var(--green); color:#04150a; box-shadow:0 0 12px var(--green-glow);}
+
+  .toolbar{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  .btn{
+    padding:8px 14px; border-radius:6px; border:1px solid transparent; cursor:pointer;
+    font-size:13px; font-weight:600; transition:transform .1s, filter .1s, box-shadow .15s;
+  }
+  .btn:hover{filter:brightness(1.1);}
+  .btn:active{transform:scale(0.97);}
+  .btn-fan{background:var(--green); color:#04150a; box-shadow:0 0 10px var(--green-glow);}
+  .btn-cre{background:var(--teal); color:#04150a; box-shadow:0 0 10px var(--teal-glow);}
+  .btn-layer{background:var(--amber); color:#241a02; box-shadow:0 0 10px rgba(232,193,90,0.4);}
+  .btn-ghost{background:transparent; color:var(--text-dim); border:1px solid var(--border);}
+  .btn-ghost:hover{color:var(--text); border-color:var(--green-dim);}
+  .btn-danger{background:var(--danger); color:#210007; box-shadow:0 0 10px var(--danger-glow);}
+  .btn-plain{background:var(--panel-2); color:var(--text); border:1px solid var(--border);}
+
+  select.layer-picker{
+    padding:8px 10px; border-radius:6px; border:1px solid var(--border-soft);
+    background:var(--panel-2); color:var(--amber); font-size:13px; font-weight:700;
+    max-width:180px;
+  }
+
+  main{flex:1; position:relative; overflow:hidden; display:flex; flex-direction:column;}
+
+  /* BOARD VIEW */
+  .board-topbar{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:12px 26px; font-size:12.5px; color:var(--text-dim);
+    border-bottom:1px solid var(--border-soft);
+  }
+  .zoom-controls{display:flex; align-items:center; gap:4px; margin-left:auto;}
+  .zoom-controls button{
+    width:28px; height:28px; border-radius:6px; border:1px solid var(--border);
+    background:var(--panel-2); color:var(--text); cursor:pointer; font-size:15px; font-weight:700; line-height:1;
+  }
+  .zoom-controls button:hover{border-color:var(--green-dim); color:var(--green);}
+  .zoom-controls .zoom-pct{font-size:12px; color:var(--text-dim); min-width:44px; text-align:center;}
+  .zoom-controls .zoom-reset{width:auto; padding:0 10px; font-size:11.5px; font-weight:600;}
+
+  #board-view{position:relative; overflow:hidden; flex:1; cursor:grab; background:rgba(0,0,0,0.08);}
+  #board-view.panning{cursor:grabbing;}
+  #board-canvas{position:absolute; top:0; left:0; transform-origin:0 0;}
+  #board-svg{position:absolute; top:0; left:0; pointer-events:none; overflow:visible;}
+
+  .signal-line{
+    fill:none; stroke-width:2.4;
+    filter:drop-shadow(0 0 4px var(--green-glow));
+    stroke-dasharray:7 7;
+    animation:flow 1.4s linear infinite;
+    cursor:pointer;
+  }
+  @keyframes flow{to{stroke-dashoffset:-28;}}
+  .signal-line-preview{
+    fill:none; stroke:var(--teal); stroke-width:2.2; stroke-dasharray:5 5;
+    filter:drop-shadow(0 0 4px var(--teal-glow));
+  }
+  .link-label-bg{fill:var(--bg-2); stroke:var(--border); stroke-width:1; opacity:0.92;}
+  .link-label-text{font-size:11px; font-weight:700; fill:#a8f2c4; font-family:'Segoe UI',sans-serif;}
+
+  .note{
+    position:absolute; width:190px; min-height:74px; padding:12px 12px 12px 14px;
+    border-radius:8px; cursor:grab; user-select:none;
+    background:linear-gradient(160deg, var(--panel-2), var(--panel));
+    border:1px solid var(--border);
+    border-left:3px solid var(--green);
+    box-shadow:0 4px 18px rgba(0,0,0,0.5);
+    transition:box-shadow .15s, border-color .15s;
+    font-size:13px; line-height:1.35;
+  }
+  .note.cre{border-left-color:var(--teal);}
+  .note:active{cursor:grabbing;}
+  .note:hover{box-shadow:0 6px 24px rgba(0,0,0,0.6), 0 0 16px var(--green-glow); z-index:20;}
+  .note.cre:hover{box-shadow:0 6px 24px rgba(0,0,0,0.6), 0 0 16px var(--teal-glow);}
+  .note .name{font-weight:700; color:var(--text); word-break:break-word; padding-right:18px;}
+  .note .sub{font-size:11px; color:var(--text-dim); margin-top:5px; letter-spacing:0.2px;}
+  .note .del{
+    position:absolute; top:8px; right:8px; width:18px; height:18px;
+    border-radius:50%; border:none; background:rgba(255,93,115,0.12); color:var(--danger);
+    font-size:12px; line-height:18px; text-align:center; cursor:pointer; padding:0;
+  }
+  .note .del:hover{background:var(--danger); color:#210007;}
+  .connector{
+    position:absolute; right:-9px; top:50%; transform:translateY(-50%);
+    width:16px; height:16px; border-radius:50%;
+    background:var(--bg); border:3px solid var(--green); cursor:crosshair; z-index:5;
+    box-shadow:0 0 8px var(--green-glow);
+  }
+  .note.cre .connector{right:auto; left:-9px; border-color:var(--teal); box-shadow:0 0 8px var(--teal-glow);}
+  .note.linking-src{box-shadow:0 0 0 2px var(--teal), 0 0 18px var(--teal-glow);}
+
+  /* TABLE VIEW */
+  #table-view{padding:20px 26px 40px;}
+  .filters-card{
+    background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:16px;
+    display:flex; gap:12px; flex-wrap:wrap; align-items:end;
+  }
+  .filter-field{display:flex; flex-direction:column; gap:4px;}
+  .filter-field label{font-size:10.5px; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-dim); font-weight:700;}
+  .filter-field input, .filter-field select{
+    padding:7px 9px; border:1px solid var(--border); border-radius:6px; font-size:13px; min-width:140px;
+    background:var(--panel-2); color:var(--text);
+  }
+  .filter-field input:focus, .filter-field select:focus{outline:1px solid var(--green); outline-offset:0;}
+  .result-count{margin-left:auto; font-size:12px; color:var(--text-dim); align-self:center;}
+
+  table{width:100%; border-collapse:collapse; background:var(--panel); border-radius:10px; overflow:hidden; border:1px solid var(--border);}
+  thead tr{background:var(--panel-2);}
+  th{color:var(--green); text-align:left; padding:10px 12px; font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--border);}
+  td{padding:10px 12px; font-size:13px; border-bottom:1px solid var(--border-soft); vertical-align:top;}
+  tbody tr:hover{background:rgba(55,224,127,0.04);}
+  .badge-fan{display:inline-block; padding:2px 9px; border-radius:10px; background:rgba(55,224,127,0.14); border:1px solid var(--green-dim); font-size:11px; font-weight:700; color:var(--green);}
+  .badge-cre{display:inline-block; padding:2px 9px; border-radius:10px; background:rgba(34,201,168,0.14); border:1px solid var(--teal); font-size:11px; font-weight:700; color:var(--teal);}
+  .badge-layer{display:inline-block; padding:2px 9px; border-radius:10px; background:rgba(232,193,90,0.14); border:1px solid var(--amber); font-size:11px; font-weight:700; color:var(--amber);}
+  .link-cell{max-width:260px;}
+  .link-row{display:flex; align-items:center; gap:6px; margin-bottom:3px;}
+  .link-row .num{color:var(--text-dim); font-size:11px; width:14px; flex:none;}
+  .link-cell a{color:#79d9ff; text-decoration:none; word-break:break-all; font-size:12.5px;}
+  .link-cell a:hover{text-decoration:underline;}
+  .muted{color:var(--text-dim);}
+  .row-actions{display:flex; gap:6px;}
+  .row-actions button{border:none; padding:5px 10px; border-radius:5px; cursor:pointer; font-size:12px; font-weight:600;}
+  .empty-state{padding:40px; text-align:center; color:var(--text-dim); background:var(--panel); border:1px solid var(--border); border-radius:10px;}
+
+  /* MODAL */
+  .overlay{
+    position:fixed; inset:0; background:rgba(2,6,4,0.7);
+    display:flex; align-items:center; justify-content:center; padding:16px;
+  }
+  .modal{
+    background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:22px; width:100%; max-width:400px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(55,224,127,0.08);
+    max-height:88vh; overflow-y:auto;
+  }
+  .modal h3{margin:0 0 14px 0; font-size:15.5px; color:var(--text);}
+  .modal .field{margin-bottom:12px; display:flex; flex-direction:column; gap:5px;}
+  .modal label{font-size:11.5px; font-weight:700; color:var(--text-dim); letter-spacing:0.3px;}
+  .modal input, .modal select{padding:9px 10px; border:1px solid var(--border); border-radius:6px; font-size:14px; background:var(--panel-2); color:var(--text);}
+  .modal input:focus, .modal select:focus{outline:1px solid var(--green);}
+  .modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:16px;}
+  .modal-actions .spacer{flex:1;}
+  .url-row{display:flex; gap:6px; align-items:center;}
+  .url-row input{flex:1;}
+  .url-remove{
+    flex:none; width:28px; height:28px; border-radius:6px; border:1px solid var(--border);
+    background:var(--panel-2); color:var(--danger); cursor:pointer; font-size:14px;
+  }
+  .url-remove:hover{background:var(--danger); color:#210007;}
+  .add-url-btn{
+    margin-top:2px; padding:7px 10px; border-radius:6px; border:1px dashed var(--border);
+    background:transparent; color:var(--green); cursor:pointer; font-size:12.5px; font-weight:600; text-align:left;
+  }
+  .add-url-btn:hover{border-color:var(--green);}
+  .add-url-btn:disabled{opacity:0.35; cursor:not-allowed;}
+
+  .layer-row{display:flex; align-items:center; gap:8px; margin-bottom:8px;}
+  .layer-row input{flex:1;}
+  .layer-row .count{font-size:11px; color:var(--text-dim); flex:none; min-width:90px; text-align:right;}
+  .layer-row button{
+    flex:none; width:28px; height:28px; border-radius:6px; border:1px solid var(--border);
+    background:var(--panel-2); color:var(--danger); cursor:pointer; font-size:14px;
+  }
+  .layer-row button:hover{background:var(--danger); color:#210007;}
+  .layer-add-row{display:flex; gap:6px; margin-top:10px;}
+  .layer-add-row input{flex:1;}
+
+  .loading{padding:60px; text-align:center; color:var(--text-dim); font-size:14px;}
+  .ctx-menu{
+    position:fixed; z-index:300; background:var(--panel); border:1px solid var(--border);
+    border-radius:8px; box-shadow:0 12px 34px rgba(0,0,0,0.6); padding:6px; min-width:210px;
+    display:flex; flex-direction:column; gap:2px;
+  }
+  .ctx-item{
+    background:transparent; border:none; color:var(--text); text-align:left;
+    padding:9px 11px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600;
+    display:flex; align-items:center; gap:8px;
+  }
+  .ctx-item:hover{background:rgba(55,224,127,0.12); color:var(--green);}
+  .ctx-item.cre-item:hover{background:rgba(34,201,168,0.12); color:var(--teal);}
+  .toast{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    background:var(--panel); color:var(--text); padding:10px 18px; border-radius:8px; border:1px solid var(--green-dim);
+    font-size:13px; z-index:200; box-shadow:0 4px 20px rgba(0,0,0,0.6), 0 0 14px var(--green-glow);
+    opacity:0; transition:opacity .25s;
+  }
+  .toast.show{opacity:1;}
+
+  /* AUTH SCREEN */
+  #authScreen{
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .auth-card{
+    background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:28px;
+    width:100%; max-width:360px; box-shadow:0 20px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(55,224,127,0.08);
+  }
+  .auth-card h1{font-size:18px; margin:0 0 4px 0; display:flex; align-items:center; gap:8px;}
+  .auth-card .sub{font-size:12.5px; color:var(--text-dim); margin-bottom:18px;}
+  .auth-tabs{display:flex; gap:4px; background:var(--panel-2); padding:4px; border-radius:8px; margin-bottom:18px;}
+  .auth-tabs button{
+    flex:1; padding:7px; border:none; border-radius:6px; cursor:pointer; background:transparent;
+    color:var(--text-dim); font-size:13px; font-weight:600;
+  }
+  .auth-tabs button.active{background:var(--green); color:#04150a;}
+  .auth-field{margin-bottom:12px; display:flex; flex-direction:column; gap:5px;}
+  .auth-field label{font-size:11.5px; font-weight:700; color:var(--text-dim);}
+  .auth-field input{padding:10px; border:1px solid var(--border); border-radius:6px; font-size:14px; background:var(--panel-2); color:var(--text);}
+  .auth-field input:focus{outline:1px solid var(--green);}
+  .auth-error{color:var(--danger); font-size:12.5px; margin-bottom:10px; min-height:16px;}
+  .auth-submit{
+    width:100%; padding:10px; border-radius:6px; border:none; background:var(--green); color:#04150a;
+    font-weight:700; font-size:14px; cursor:pointer; box-shadow:0 0 10px var(--green-glow);
+  }
+  .auth-submit:disabled{opacity:0.5; cursor:not-allowed;}
+  #logoutBtn{margin-left:6px;}
+</style>
+</head>
+<body>
+<div id="authScreen">
+  <div class="auth-card">
+    <h1><span class="dot" style="width:9px;height:9px;border-radius:50%;background:var(--green); box-shadow:0 0 10px 2px var(--green-glow); display:inline-block;"></span>Доска связок</h1>
+    <div class="sub">Вход для команды</div>
+    <div class="auth-tabs">
+      <button id="authTabLogin" class="active" type="button">Войти</button>
+      <button id="authTabRegister" type="button">Регистрация</button>
+    </div>
+    <div class="auth-error" id="authError"></div>
+    <form id="authForm">
+      <div class="auth-field">
+        <label>Email</label>
+        <input type="email" id="authEmail" autocomplete="username" required>
+      </div>
+      <div class="auth-field">
+        <label>Пароль</label>
+        <input type="password" id="authPassword" autocomplete="current-password" required minlength="6">
+      </div>
+      <div class="auth-field" id="inviteField" style="display:none;">
+        <label>Код приглашения</label>
+        <input type="text" id="authInvite" autocomplete="off">
+      </div>
+      <button class="auth-submit" id="authSubmit" type="submit">Войти</button>
+    </form>
+  </div>
+</div>
+
+<div id="app" style="display:none;">
+  <header>
+    <h1><span class="dot"></span>Доска связок</h1>
+    <div class="tabs">
+      <button class="tab-btn active" data-view="board" id="tabBoardBtn">Доска</button>
+      <button class="tab-btn" data-view="table" id="tabTableBtn">Таблица</button>
+    </div>
+    <div class="toolbar">
+      <select class="layer-picker" id="activeLayerSelect"></select>
+      <button class="btn btn-fan" id="addFanBtn">+ Фанпейдж</button>
+      <button class="btn btn-cre" id="addCreBtn">+ Нейминг креатива</button>
+      <button class="btn btn-layer" id="manageLayersBtn">Слои</button>
+      <button class="btn btn-ghost" id="resetBtn">Очистить всё</button>
+      <button class="btn btn-ghost" id="logoutBtn">Выйти</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="loadingBox" class="loading">Загрузка доски…</div>
+
+    <div id="board-outer" style="display:none; flex:1; flex-direction:column; min-height:0;">
+      <div class="board-topbar">
+        <span>Перетаскивайте карточки, тяните точку от фанпейджа к креативу. Правая кнопка мыши на пустом месте — создать карточку. Колесо — зум, перетаскивание фона — панорама.</span>
+        <div class="zoom-controls">
+          <button id="zoomOutBtn" title="Уменьшить">−</button>
+          <span class="zoom-pct" id="zoomPct">100%</span>
+          <button id="zoomInBtn" title="Увеличить">+</button>
+          <button class="zoom-reset" id="zoomResetBtn" title="Сбросить вид">Сброс</button>
+        </div>
+      </div>
+      <div id="board-view">
+        <div id="board-canvas">
+          <svg id="board-svg"></svg>
+        </div>
+      </div>
+    </div>
+
+    <div id="table-view" style="display:none;">
+      <div class="filters-card">
+        <div class="filter-field">
+          <label>Поиск</label>
+          <input type="text" id="fSearch" placeholder="фанпейдж, креатив, гео, ссылка...">
+        </div>
+        <div class="filter-field">
+          <label>Слой</label>
+          <select id="fLayer"><option value="">Все слои</option></select>
+        </div>
+        <div class="filter-field">
+          <label>Фанпейдж</label>
+          <select id="fFan"><option value="">Все</option></select>
+        </div>
+        <div class="filter-field">
+          <label>Креатив</label>
+          <select id="fCre"><option value="">Все</option></select>
+        </div>
+        <div class="filter-field">
+          <label>Гео</label>
+          <select id="fGeo"><option value="">Все</option></select>
+        </div>
+        <button class="btn btn-ghost" id="clearFiltersBtn" style="align-self:end;">Сбросить фильтры</button>
+        <div class="result-count" id="resultCount"></div>
+      </div>
+      <div id="tableWrap"></div>
+    </div>
+  </main>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+(function(){
+  const STORAGE_KEY = 'crm-board-data-v2';
+  const OLD_STORAGE_KEY = 'crm-board-data';
+  const MAX_URLS = 4;
+  let state = { layers: [], fanpages: [], creatives: [], links: [], currentLayerId: null };
+  let currentView = 'board';
+  let dragging = null;
+  let connecting = null;
+
+  const boardOuter = document.getElementById('board-outer');
+  const boardView = document.getElementById('board-view');
+  const boardCanvas = document.getElementById('board-canvas');
+  const tableView = document.getElementById('table-view');
+  const svg = document.getElementById('board-svg');
+  const loadingBox = document.getElementById('loadingBox');
+  const tableWrap = document.getElementById('tableWrap');
+
+  let zoom = 1, panX = 30, panY = 30;
+  let panning = null;
+  const ZOOM_MIN = 0.25, ZOOM_MAX = 2.5;
+
+  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+
+  function applyTransform(){
+    boardCanvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+    document.getElementById('zoomPct').textContent = Math.round(zoom*100) + '%';
+  }
+
+  function toCanvasCoords(clientX, clientY){
+    const rect = boardView.getBoundingClientRect();
+    return { x: (clientX - rect.left - panX) / zoom, y: (clientY - rect.top - panY) / zoom };
+  }
+
+  function zoomBy(factor){
+    const rect = boardView.getBoundingClientRect();
+    const cx = rect.width/2, cy = rect.height/2;
+    const oldZoom = zoom;
+    const newZoom = clamp(oldZoom*factor, ZOOM_MIN, ZOOM_MAX);
+    panX = cx - (cx-panX) * (newZoom/oldZoom);
+    panY = cy - (cy-panY) * (newZoom/oldZoom);
+    zoom = newZoom;
+    applyTransform();
+  }
+
+  function updateBoardViewportHeight(){
+    const headerH = document.querySelector('header').offsetHeight;
+    const topbarH = document.querySelector('.board-topbar').offsetHeight;
+    const h = window.innerHeight - headerH - topbarH - 2;
+    boardView.style.height = Math.max(360, h) + 'px';
+  }
+  window.addEventListener('resize', updateBoardViewportHeight);
+
+  boardView.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    const rect = boardView.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const oldZoom = zoom;
+    const factor = e.deltaY < 0 ? 1.12 : 0.89;
+    const newZoom = clamp(oldZoom*factor, ZOOM_MIN, ZOOM_MAX);
+    panX = mouseX - (mouseX - panX) * (newZoom/oldZoom);
+    panY = mouseY - (mouseY - panY) * (newZoom/oldZoom);
+    zoom = newZoom;
+    applyTransform();
+  }, {passive:false});
+
+  boardView.addEventListener('mousedown', (e)=>{
+    if(e.target.closest('.note')) return;
+    if(e.button !== 0) return;
+    panning = { startX: e.clientX, startY: e.clientY, panX0: panX, panY0: panY };
+    boardView.classList.add('panning');
+  });
+  document.addEventListener('mousemove', (e)=>{
+    if(panning){
+      panX = panning.panX0 + (e.clientX - panning.startX);
+      panY = panning.panY0 + (e.clientY - panning.startY);
+      applyTransform();
+    }
+  });
+  document.addEventListener('mouseup', ()=>{
+    if(panning){ panning = null; boardView.classList.remove('panning'); }
+  });
+
+  document.getElementById('zoomInBtn').addEventListener('click', ()=>zoomBy(1.25));
+  document.getElementById('zoomOutBtn').addEventListener('click', ()=>zoomBy(0.8));
+  document.getElementById('zoomResetBtn').addEventListener('click', ()=>{
+    zoom = 1; panX = 30; panY = 30; applyTransform();
+  });
+
+  function uid(){ return 'id' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+  function hashStr(s){ let h=0; for(let i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; } return Math.abs(h); }
+  function escapeHtml(s){ const d=document.createElement('div'); d.textContent=String(s==null?'':s); return d.innerHTML; }
+
+  function showToast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(()=>t.classList.remove('show'), 1800);
+  }
+
+  function ensureAtLeastOneLayer(){
+    if(state.layers.length === 0){
+      const l = { id: uid(), name: 'Слой 1' };
+      state.layers.push(l);
+    }
+    if(!state.currentLayerId || !state.layers.find(l=>l.id===state.currentLayerId)){
+      state.currentLayerId = state.layers[0].id;
+    }
+  }
+
+  async function loadState(){
+    try{
+      const res = await window.storage.get(STORAGE_KEY, false);
+      if(res && res.value){
+        const parsed = JSON.parse(res.value);
+        state.layers = parsed.layers || [];
+        state.fanpages = parsed.fanpages || [];
+        state.creatives = parsed.creatives || [];
+        state.links = (parsed.links || []).map(l=>{
+          if(!Array.isArray(l.postUrls)){ l.postUrls = l.postUrl ? [l.postUrl] : []; delete l.postUrl; }
+          l.postUrls = l.postUrls.filter(u=>u!=null).slice(0, MAX_URLS);
+          if(!l.createdAt) l.createdAt = Date.now();
+          return l;
+        });
+        state.currentLayerId = parsed.currentLayerId || null;
+      } else {
+        // try migrating legacy single-layer data (pre-layers version)
+        try{
+          const oldRes = await window.storage.get(OLD_STORAGE_KEY, false);
+          if(oldRes && oldRes.value){
+            const old = JSON.parse(oldRes.value);
+            const defaultLayer = { id: uid(), name: 'Слой 1' };
+            state.layers = [defaultLayer];
+            state.fanpages = (old.fanpages||[]).map(f=>({...f, layerId: defaultLayer.id}));
+            state.creatives = (old.creatives||[]).map(c=>({...c, layerId: defaultLayer.id}));
+            state.links = (old.links||[]).map(l=>{
+              let urls = Array.isArray(l.postUrls) ? l.postUrls : (l.postUrl ? [l.postUrl] : []);
+              return { id:l.id, fanpageId:l.fanpageId, creativeId:l.creativeId, geo:l.geo||'', postUrls:urls.slice(0,MAX_URLS), createdAt:l.createdAt||Date.now(), layerId: defaultLayer.id };
+            });
+            state.currentLayerId = defaultLayer.id;
+            showToast('Старые данные перенесены в «Слой 1»');
+          }
+        }catch(e2){ /* nothing to migrate */ }
+      }
+    }catch(e){
+      // nothing saved yet
+    }
+    // any fanpage/creative/link missing a layerId (older partial saves) gets bucketed into a default layer
+    const orphanFan = state.fanpages.filter(f=>!f.layerId);
+    const orphanCre = state.creatives.filter(c=>!c.layerId);
+    const orphanLink = state.links.filter(l=>!l.layerId);
+    if(orphanFan.length || orphanCre.length || orphanLink.length){
+      let bucket = state.layers[0];
+      if(!bucket){ bucket = { id: uid(), name: 'Слой 1' }; state.layers.push(bucket); }
+      orphanFan.forEach(f=>f.layerId=bucket.id);
+      orphanCre.forEach(c=>c.layerId=bucket.id);
+      orphanLink.forEach(l=>l.layerId=bucket.id);
+    }
+    ensureAtLeastOneLayer();
+
+    loadingBox.style.display='none';
+    boardOuter.style.display='flex';
+    setupTableDelegation();
+    populateActiveLayerSelect();
+    applyTransform();
+    render();
+    saveState(true);
+  }
+
+  let saveTimer = null;
+  function saveState(immediate){
+    clearTimeout(saveTimer);
+    const doSave = async () => {
+      try{
+        const result = await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
+        if(!result){ showToast('Не удалось сохранить данные'); }
+      }catch(e){
+        showToast('Ошибка сохранения: ' + (e.message||e));
+      }
+    };
+    if(immediate){ doSave(); } else { saveTimer = setTimeout(doSave, 350); }
+  }
+
+  function activeFanpages(){ return state.fanpages.filter(f=>f.layerId===state.currentLayerId); }
+  function activeCreatives(){ return state.creatives.filter(c=>c.layerId===state.currentLayerId); }
+  function activeLinks(){ return state.links.filter(l=>l.layerId===state.currentLayerId); }
+  function layerName(id){ const l = state.layers.find(x=>x.id===id); return l ? l.name : '—'; }
+
+  function populateActiveLayerSelect(){
+    const sel = document.getElementById('activeLayerSelect');
+    sel.innerHTML = state.layers.map(l=>`<option value="${l.id}">${escapeHtml(l.name)}</option>`).join('');
+    sel.value = state.currentLayerId;
+  }
+
+  // ---------- BOARD RENDER ----------
+  function ensurePosition(item, index, side){
+    if(typeof item.x === 'number' && typeof item.y === 'number') return;
+    item.x = side === 'fan' ? 40 : 580;
+    item.y = 30 + index * 112;
+  }
+
+  function computeCanvasSize(fans, cres){
+    let maxX = 1000, maxY = 700;
+    [...fans, ...cres].forEach(n=>{
+      maxX = Math.max(maxX, (n.x||0) + 420);
+      maxY = Math.max(maxY, (n.y||0) + 320);
+    });
+    return { w: Math.max(3000, maxX), h: Math.max(2000, maxY) };
+  }
+
+  function renderBoard(){
+    const fans = activeFanpages();
+    const cres = activeCreatives();
+    fans.forEach((f,i)=>ensurePosition(f,i,'fan'));
+    cres.forEach((c,i)=>ensurePosition(c,i,'cre'));
+
+    boardCanvas.querySelectorAll('.note').forEach(n=>n.remove());
+
+    const { w, h } = computeCanvasSize(fans, cres);
+    boardCanvas.style.width = w + 'px';
+    boardCanvas.style.height = h + 'px';
+    svg.setAttribute('width', w);
+    svg.setAttribute('height', h);
+    svg.style.width = w + 'px';
+    svg.style.height = h + 'px';
+
+    fans.forEach((f, idx) => boardCanvas.appendChild(makeNote(f, 'fan', idx)));
+    cres.forEach((c, idx) => boardCanvas.appendChild(makeNote(c, 'cre', idx)));
+
+    updateBoardViewportHeight();
+    applyTransform();
+    drawStrings();
+  }
+
+  function makeNote(item, kind, idx){
+    const div = document.createElement('div');
+    div.className = 'note ' + kind;
+    div.style.left = item.x + 'px';
+    div.style.top = item.y + 'px';
+    div.dataset.id = item.id;
+    div.dataset.kind = kind;
+
+    const del = document.createElement('button');
+    del.className='del'; del.textContent='×'; del.title='Удалить';
+    del.addEventListener('click', (e)=>{ e.stopPropagation(); deleteNode(item.id, kind); });
+    div.appendChild(del);
+
+    const name = document.createElement('div'); name.className='name'; name.textContent = item.name;
+    div.appendChild(name);
+
+    const linkCount = activeLinks().filter(l => kind==='fan' ? l.fanpageId===item.id : l.creativeId===item.id).length;
+    const sub = document.createElement('div'); sub.className='sub';
+    sub.textContent = (kind==='fan' ? 'Фанпейдж' : 'Креатив') + ' · связей: ' + linkCount;
+    div.appendChild(sub);
+
+    const connector = document.createElement('div');
+    connector.className='connector';
+    div.appendChild(connector);
+
+    div.addEventListener('mousedown', (e)=>{
+      if(e.target === connector) return;
+      const c = toCanvasCoords(e.clientX, e.clientY);
+      dragging = { id:item.id, kind, offsetX: c.x - item.x, offsetY: c.y - item.y };
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    connector.addEventListener('mousedown', (e)=>{
+      e.stopPropagation(); e.preventDefault();
+      if(kind !== 'fan') { showToast('Тяните связь начиная с фанпейджа'); return; }
+      const c = toCanvasCoords(e.clientX, e.clientY);
+      connecting = {
+        fromId: item.id,
+        x1: item.x + 190, y1: item.y + 37,
+        mouseX: c.x, mouseY: c.y
+      };
+      div.classList.add('linking-src');
+    });
+
+    return div;
+  }
+
+  // Geometry for a link's curve + matching label position (label sits exactly on the curve at t=0.5).
+  // Sibling connections (same fanpage+creative pair) are offset perpendicular to the connection
+  // direction — this keeps them visually separated at any angle, not just for near-horizontal lines.
+  function computeGeometry(fanNode, creNode, link){
+    const baseX1 = fanNode.x + 190, baseY1 = fanNode.y + 37;
+    const baseX2 = creNode.x, baseY2 = creNode.y + 37;
+
+    const siblings = activeLinks().filter(l=>l.fanpageId===link.fanpageId && l.creativeId===link.creativeId);
+    const idx = Math.max(0, siblings.findIndex(l=>l.id===link.id));
+    const count = siblings.length;
+    const mid = (count-1)/2;
+    const spread = count > 1 ? (idx - mid) : 0; // e.g. count=2 -> -0.5, 0.5 ; count=3 -> -1,0,1
+
+    const dx = baseX2 - baseX1, dy = baseY2 - baseY1;
+    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+    const px = -dy/len, py = dx/len; // unit vector perpendicular to the connection
+
+    const jitter = ((hashStr(link.id) % 5) - 2) * 3;
+    const anchorOffset = spread * 22 + jitter; // shifts BOTH endpoints, so lines stay parallel end-to-end
+    const bowOffset = spread * 34;             // extra curve on top of the parallel shift
+
+    const x1 = baseX1 + px*anchorOffset, y1 = baseY1 + py*anchorOffset;
+    const x2 = baseX2 + px*anchorOffset, y2 = baseY2 + py*anchorOffset;
+
+    const midX = (x1+x2)/2, midY = (y1+y2)/2;
+    const mx = midX + px*bowOffset;
+    const my = midY + py*bowOffset + 32; // small constant sag for a hanging-string feel
+
+    // point on the quadratic bezier at t = 0.5
+    const labelX = 0.25*x1 + 0.5*mx + 0.25*x2;
+    const labelY = 0.25*y1 + 0.5*my + 0.25*y2;
+
+    return { x1, y1, x2, y2, mx, my, labelX, labelY };
+  }
+
+  function drawStrings(){
+    svg.innerHTML = '';
+    const fanMap = {}; activeFanpages().forEach(f=>fanMap[f.id]=f);
+    const creMap = {}; activeCreatives().forEach(c=>creMap[c.id]=c);
+
+    activeLinks().forEach(link => {
+      const f = fanMap[link.fanpageId], c = creMap[link.creativeId];
+      if(!f || !c) return;
+      const geo = computeGeometry(f, c, link);
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d', `M ${geo.x1} ${geo.y1} Q ${geo.mx} ${geo.my} ${geo.x2} ${geo.y2}`);
+      path.setAttribute('stroke', link.postUrls && link.postUrls.length ? 'var(--green)' : 'var(--teal)');
+      path.classList.add('signal-line');
+      path.style.pointerEvents = 'stroke';
+      path.addEventListener('click', ()=>openLinkModal(link));
+      svg.appendChild(path);
+
+      if(link.geo){
+        const text = link.geo;
+        const w = Math.max(26, text.length * 6.4 + 12);
+        const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+        rect.setAttribute('x', geo.labelX - w/2);
+        rect.setAttribute('y', geo.labelY - 12);
+        rect.setAttribute('width', w);
+        rect.setAttribute('height', 16);
+        rect.setAttribute('rx', 4);
+        rect.classList.add('link-label-bg');
+        svg.appendChild(rect);
+
+        const label = document.createElementNS('http://www.w3.org/2000/svg','text');
+        label.setAttribute('x', geo.labelX);
+        label.setAttribute('y', geo.labelY - 1);
+        label.setAttribute('text-anchor','middle');
+        label.classList.add('link-label-text');
+        label.style.pointerEvents='none';
+        label.textContent = text;
+        svg.appendChild(label);
+      }
+    });
+
+    if(connecting){
+      const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d', `M ${connecting.x1} ${connecting.y1} Q ${(connecting.x1+connecting.mouseX)/2} ${(connecting.y1+connecting.mouseY)/2+55} ${connecting.mouseX} ${connecting.mouseY}`);
+      path.classList.add('signal-line-preview');
+      svg.appendChild(path);
+    }
+  }
+
+  document.addEventListener('mousemove', (e)=>{
+    if(dragging){
+      const item = (dragging.kind==='fan' ? state.fanpages : state.creatives).find(i=>i.id===dragging.id);
+      if(!item) return;
+      const c = toCanvasCoords(e.clientX, e.clientY);
+      item.x = c.x - dragging.offsetX;
+      item.y = c.y - dragging.offsetY;
+      const el = boardCanvas.querySelector(`.note[data-id="${item.id}"][data-kind="${dragging.kind}"]`);
+      if(el){ el.style.left = item.x+'px'; el.style.top = item.y+'px'; }
+      const { w, h } = computeCanvasSize(activeFanpages(), activeCreatives());
+      boardCanvas.style.width = w + 'px'; boardCanvas.style.height = h + 'px';
+      svg.setAttribute('width', w); svg.setAttribute('height', h);
+      svg.style.width = w + 'px'; svg.style.height = h + 'px';
+      drawStrings();
+    }
+    if(connecting){
+      const c = toCanvasCoords(e.clientX, e.clientY);
+      connecting.mouseX = c.x;
+      connecting.mouseY = c.y;
+      drawStrings();
+    }
+  });
+
+  document.addEventListener('mouseup', (e)=>{
+    if(dragging){ saveState(); dragging = null; }
+    if(connecting){
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const noteEl = el ? el.closest('.note.cre') : null;
+      boardCanvas.querySelectorAll('.linking-src').forEach(n=>n.classList.remove('linking-src'));
+      if(noteEl){
+        const creativeId = noteEl.dataset.id;
+        openLinkModal(null, connecting.fromId, creativeId);
+      }
+      connecting = null;
+      drawStrings();
+    }
+  });
+
+  function deleteNode(id, kind){
+    const item = (kind==='fan'?state.fanpages:state.creatives).find(i=>i.id===id);
+    if(!item) return;
+    const linkedCount = state.links.filter(l => kind==='fan'? l.fanpageId===id : l.creativeId===id).length;
+    const msg = linkedCount>0
+      ? `Удалить "${item.name}"? Также будет удалено связей: ${linkedCount}.`
+      : `Удалить "${item.name}"?`;
+    if(!confirm(msg)) return;
+    if(kind==='fan'){
+      state.fanpages = state.fanpages.filter(i=>i.id!==id);
+      state.links = state.links.filter(l=>l.fanpageId!==id);
+    }else{
+      state.creatives = state.creatives.filter(i=>i.id!==id);
+      state.links = state.links.filter(l=>l.creativeId!==id);
+    }
+    saveState(true);
+    render();
+  }
+
+  // ---------- ADD NODE MODAL ----------
+  function addNodePrompt(kind, pos){
+    const label = kind==='fan' ? 'Название фанпейджа' : 'Нейминг креатива';
+    showSimpleModal({
+      title: (kind==='fan' ? 'Новый фанпейдж' : 'Новый нейминг креатива') + ' · ' + layerName(state.currentLayerId),
+      label, placeholder:'Введите название',
+      onSubmit: (val) => {
+        const arr = kind==='fan' ? state.fanpages : state.creatives;
+        const item = { id: uid(), name: val.trim(), layerId: state.currentLayerId };
+        if(pos){
+          item.x = Math.round(pos.x - 95);
+          item.y = Math.round(pos.y - 37);
+        }
+        arr.push(item);
+        saveState(true);
+        render();
+      }
+    });
+  }
+
+  // ---------- RIGHT-CLICK CONTEXT MENU ----------
+  let ctxKeyHandler = null;
+  function removeContextMenu(){
+    const m = document.getElementById('ctxMenu');
+    if(m) m.remove();
+    if(ctxKeyHandler){ document.removeEventListener('keydown', ctxKeyHandler); ctxKeyHandler = null; }
+  }
+  function showContextMenu(clientX, clientY, canvasPos){
+    removeContextMenu();
+    const menu = document.createElement('div');
+    menu.id = 'ctxMenu';
+    menu.className = 'ctx-menu';
+    document.body.appendChild(menu);
+
+    const fanBtn = document.createElement('button');
+    fanBtn.className = 'ctx-item'; fanBtn.textContent = '+ Фанпейдж здесь';
+    fanBtn.addEventListener('click', ()=>{ removeContextMenu(); addNodePrompt('fan', canvasPos); });
+    menu.appendChild(fanBtn);
+
+    const creBtn = document.createElement('button');
+    creBtn.className = 'ctx-item cre-item'; creBtn.textContent = '+ Нейминг креатива здесь';
+    creBtn.addEventListener('click', ()=>{ removeContextMenu(); addNodePrompt('cre', canvasPos); });
+    menu.appendChild(creBtn);
+
+    // position, then clamp so it stays on screen
+    menu.style.left = clientX + 'px';
+    menu.style.top = clientY + 'px';
+    const rect = menu.getBoundingClientRect();
+    if(rect.right > window.innerWidth) menu.style.left = Math.max(4, window.innerWidth - rect.width - 8) + 'px';
+    if(rect.bottom > window.innerHeight) menu.style.top = Math.max(4, window.innerHeight - rect.height - 8) + 'px';
+
+    // close on a subsequent left click, or Escape — NOT on 'contextmenu', since that would
+    // immediately kill the very next right-click used to reopen the menu
+    setTimeout(()=>{
+      document.addEventListener('click', removeContextMenu, { once:true });
+      ctxKeyHandler = (e)=>{ if(e.key === 'Escape') removeContextMenu(); };
+      document.addEventListener('keydown', ctxKeyHandler);
+    }, 0);
+  }
+
+  boardView.addEventListener('contextmenu', (e)=>{
+    if(e.target.closest('.note')){ removeContextMenu(); return; }
+    e.preventDefault();
+    const canvasPos = toCanvasCoords(e.clientX, e.clientY);
+    showContextMenu(e.clientX, e.clientY, canvasPos);
+  });
+  // right-clicking anywhere outside the board should also tidy up a stray open menu
+  document.addEventListener('contextmenu', (e)=>{
+    if(!boardView.contains(e.target)) removeContextMenu();
+  });
+
+  function showSimpleModal({title, label, placeholder, onSubmit}){
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `<h3>${escapeHtml(title)}</h3>`;
+    const wrap = document.createElement('div'); wrap.className='field';
+    const lab = document.createElement('label'); lab.textContent = label;
+    const inp = document.createElement('input'); inp.placeholder = placeholder || '';
+    wrap.appendChild(lab); wrap.appendChild(inp);
+    modal.appendChild(wrap);
+
+    const actions = document.createElement('div'); actions.className='modal-actions';
+    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
+    cancelBtn.addEventListener('click', ()=>document.body.removeChild(overlay));
+    actions.appendChild(cancelBtn);
+    const saveBtn = document.createElement('button'); saveBtn.className='btn btn-fan'; saveBtn.textContent='Сохранить'; saveBtn.type='button';
+    saveBtn.addEventListener('click', ()=>{
+      if(!inp.value.trim()){ showToast('Введите название'); return; }
+      onSubmit(inp.value);
+      document.body.removeChild(overlay);
+    });
+    actions.appendChild(saveBtn);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+    inp.addEventListener('keydown', (e)=>{ if(e.key==='Enter') saveBtn.click(); });
+    inp.focus();
+  }
+
+  // ---------- LAYER MANAGER ----------
+  function openLayerManager(){
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `<h3>Слои</h3><p class="muted" style="font-size:12.5px;margin-top:-8px;">У каждого слоя свои фанпейджи, креативы и связи.</p>`;
+
+    const list = document.createElement('div');
+    modal.appendChild(list);
+
+    function renderList(){
+      list.innerHTML = '';
+      state.layers.forEach(layer => {
+        const row = document.createElement('div'); row.className='layer-row';
+        const inp = document.createElement('input');
+        inp.value = layer.name;
+        inp.addEventListener('change', ()=>{
+          layer.name = inp.value.trim() || layer.name;
+          saveState(true);
+          populateActiveLayerSelect();
+          render();
+        });
+        row.appendChild(inp);
+        const fanCount = state.fanpages.filter(f=>f.layerId===layer.id).length;
+        const creCount = state.creatives.filter(c=>c.layerId===layer.id).length;
+        const cnt = document.createElement('div'); cnt.className='count';
+        cnt.textContent = `${fanCount} фп · ${creCount} кр`;
+        row.appendChild(cnt);
+        const del = document.createElement('button'); del.textContent='×'; del.type='button';
+        del.title = 'Удалить слой со всем содержимым';
+        del.addEventListener('click', ()=>{
+          if(state.layers.length <= 1){ showToast('Должен остаться хотя бы один слой'); return; }
+          if(!confirm(`Удалить слой "${layer.name}" вместе с его фанпейджами, креативами и связями (${fanCount + creCount} карточек)? Это необратимо.`)) return;
+          state.layers = state.layers.filter(l=>l.id!==layer.id);
+          state.fanpages = state.fanpages.filter(f=>f.layerId!==layer.id);
+          state.creatives = state.creatives.filter(c=>c.layerId!==layer.id);
+          state.links = state.links.filter(l=>l.layerId!==layer.id);
+          if(state.currentLayerId === layer.id){ state.currentLayerId = state.layers[0].id; }
+          saveState(true);
+          renderList();
+          populateActiveLayerSelect();
+          render();
+        });
+        row.appendChild(del);
+        list.appendChild(row);
+      });
+    }
+    renderList();
+
+    const addRow = document.createElement('div'); addRow.className='layer-add-row';
+    const addInp = document.createElement('input'); addInp.placeholder='Название нового слоя';
+    const addBtn = document.createElement('button'); addBtn.className='btn btn-layer'; addBtn.textContent='+ Добавить'; addBtn.type='button';
+    addBtn.addEventListener('click', ()=>{
+      if(!addInp.value.trim()){ showToast('Введите название слоя'); return; }
+      const newLayer = { id: uid(), name: addInp.value.trim() };
+      state.layers.push(newLayer);
+      addInp.value = '';
+      saveState(true);
+      renderList();
+      populateActiveLayerSelect();
+    });
+    addInp.addEventListener('keydown', (e)=>{ if(e.key==='Enter') addBtn.click(); });
+    addRow.appendChild(addInp); addRow.appendChild(addBtn);
+    modal.appendChild(addRow);
+
+    const actions = document.createElement('div'); actions.className='modal-actions';
+    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const closeBtn = document.createElement('button'); closeBtn.className='btn btn-plain'; closeBtn.textContent='Готово'; closeBtn.type='button';
+    closeBtn.addEventListener('click', ()=>document.body.removeChild(overlay));
+    actions.appendChild(closeBtn);
+    modal.appendChild(actions);
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+    addInp.focus();
+  }
+
+  // ---------- LINK MODAL (geo + up to 4 post urls) ----------
+  function openLinkModal(existingLink, fanpageId, creativeId){
+    const isEdit = !!existingLink;
+    const fan = state.fanpages.find(f=>f.id === (isEdit?existingLink.fanpageId:fanpageId));
+    const cre = state.creatives.find(c=>c.id === (isEdit?existingLink.creativeId:creativeId));
+
+    let urls = isEdit ? (existingLink.postUrls.length ? existingLink.postUrls.slice() : ['']) : [''];
+
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `<h3>${isEdit?'Связь: ':'Новая связь: '}${escapeHtml(fan?fan.name:'?')} → ${escapeHtml(cre?cre.name:'?')}</h3>`;
+
+    const geoField = document.createElement('div'); geoField.className='field';
+    geoField.innerHTML = `<label>Гео</label>`;
+    const geoInput = document.createElement('input');
+    geoInput.placeholder = 'например, US, DE, PL';
+    geoInput.value = isEdit ? (existingLink.geo||'') : '';
+    geoField.appendChild(geoInput);
+    modal.appendChild(geoField);
+
+    const urlsField = document.createElement('div'); urlsField.className='field';
+    urlsField.innerHTML = `<label>Ссылки на посты (до ${MAX_URLS})</label>`;
+    const urlsList = document.createElement('div');
+    urlsList.style.display='flex'; urlsList.style.flexDirection='column'; urlsList.style.gap='6px';
+    urlsField.appendChild(urlsList);
+    const addUrlBtn = document.createElement('button');
+    addUrlBtn.className='add-url-btn'; addUrlBtn.textContent='+ Добавить ссылку';
+    addUrlBtn.type='button';
+    urlsField.appendChild(addUrlBtn);
+    modal.appendChild(urlsField);
+
+    function renderUrlRows(){
+      urlsList.innerHTML = '';
+      urls.forEach((val, i) => {
+        const row = document.createElement('div'); row.className='url-row';
+        const inp = document.createElement('input');
+        inp.placeholder = `Ссылка на пост ${i+1}`;
+        inp.value = val;
+        inp.addEventListener('input', ()=>{ urls[i] = inp.value; });
+        row.appendChild(inp);
+        if(urls.length > 1){
+          const rm = document.createElement('button');
+          rm.className='url-remove'; rm.textContent='×'; rm.type='button';
+          rm.addEventListener('click', ()=>{ urls.splice(i,1); renderUrlRows(); });
+          row.appendChild(rm);
+        }
+        urlsList.appendChild(row);
+      });
+      addUrlBtn.disabled = urls.length >= MAX_URLS;
+    }
+    addUrlBtn.addEventListener('click', ()=>{
+      if(urls.length < MAX_URLS){ urls.push(''); renderUrlRows(); }
+    });
+    renderUrlRows();
+
+    const actions = document.createElement('div'); actions.className='modal-actions';
+    if(isEdit){
+      const delBtn = document.createElement('button');
+      delBtn.className='btn btn-danger'; delBtn.textContent='Удалить связь'; delBtn.type='button';
+      delBtn.addEventListener('click', ()=>{
+        if(confirm('Удалить эту связь?')){
+          state.links = state.links.filter(l=>l.id!==existingLink.id);
+          saveState(true);
+          render();
+          document.body.removeChild(overlay);
+        }
+      });
+      actions.appendChild(delBtn);
+    }
+    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
+    cancelBtn.addEventListener('click', ()=>document.body.removeChild(overlay));
+    actions.appendChild(cancelBtn);
+    const saveBtn = document.createElement('button'); saveBtn.className='btn btn-fan'; saveBtn.textContent='Сохранить'; saveBtn.type='button';
+    saveBtn.addEventListener('click', ()=>{
+      const cleanUrls = urls.map(u=>u.trim()).filter(Boolean).slice(0, MAX_URLS);
+      const geo = geoInput.value.trim();
+      if(isEdit){
+        existingLink.geo = geo;
+        existingLink.postUrls = cleanUrls;
+      }else{
+        state.links.push({ id: uid(), fanpageId, creativeId, geo, postUrls: cleanUrls, layerId: state.currentLayerId, createdAt: Date.now() });
+      }
+      saveState(true);
+      render();
+      document.body.removeChild(overlay);
+    });
+    actions.appendChild(saveBtn);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+    geoInput.focus();
+  }
+
+  // ---------- TABLE RENDER ----------
+  function populateFilterOptions(){
+    const fLayer = document.getElementById('fLayer');
+    const fFan = document.getElementById('fFan');
+    const fCre = document.getElementById('fCre');
+    const fGeo = document.getElementById('fGeo');
+    const curLayer = fLayer.value, curFan = fFan.value, curCre = fCre.value, curGeo = fGeo.value;
+
+    fLayer.innerHTML = '<option value="">Все слои</option>' +
+      state.layers.map(l=>`<option value="${l.id}">${escapeHtml(l.name)}</option>`).join('');
+
+    const scopeFan = curLayer ? state.fanpages.filter(f=>f.layerId===curLayer) : state.fanpages;
+    const scopeCre = curLayer ? state.creatives.filter(c=>c.layerId===curLayer) : state.creatives;
+    fFan.innerHTML = '<option value="">Все фанпейджи</option>' +
+      scopeFan.map(f=>`<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+    fCre.innerHTML = '<option value="">Все креативы</option>' +
+      scopeCre.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+
+    const scopeLinks = curLayer ? state.links.filter(l=>l.layerId===curLayer) : state.links;
+    const geos = Array.from(new Set(scopeLinks.map(l=>l.geo).filter(Boolean))).sort();
+    fGeo.innerHTML = '<option value="">Все гео</option>' +
+      geos.map(g=>`<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+
+    fLayer.value = curLayer; fFan.value = curFan; fCre.value = curCre; fGeo.value = curGeo;
+  }
+
+  function setupTableDelegation(){
+    tableWrap.addEventListener('click', (e)=>{
+      const editBtn = e.target.closest('.edit-link');
+      const delBtn = e.target.closest('.del-link');
+      if(!editBtn && !delBtn) return;
+      const tr = e.target.closest('tr');
+      if(!tr) return;
+      const id = tr.dataset.linkId;
+      const link = state.links.find(l=>l.id===id);
+      if(!link) return;
+      if(editBtn){
+        openLinkModal(link);
+      }else if(delBtn){
+        if(confirm('Удалить эту связь?')){
+          state.links = state.links.filter(l=>l.id!==id);
+          saveState(true);
+          render();
+        }
+      }
+    });
+  }
+
+  function renderTable(){
+    populateFilterOptions();
+    const search = (document.getElementById('fSearch').value || '').toLowerCase().trim();
+    const fLayer = document.getElementById('fLayer').value;
+    const fFan = document.getElementById('fFan').value;
+    const fCre = document.getElementById('fCre').value;
+    const fGeo = document.getElementById('fGeo').value;
+
+    const fanMap = {}; state.fanpages.forEach(f=>fanMap[f.id]=f);
+    const creMap = {}; state.creatives.forEach(c=>creMap[c.id]=c);
+
+    let rows = state.links.map(l => ({
+      link: l,
+      fan: fanMap[l.fanpageId],
+      cre: creMap[l.creativeId]
+    }));
+
+    if(fLayer) rows = rows.filter(r=>r.link.layerId===fLayer);
+    if(fFan) rows = rows.filter(r=>r.fan && r.fan.id===fFan);
+    if(fCre) rows = rows.filter(r=>r.cre && r.cre.id===fCre);
+    if(fGeo) rows = rows.filter(r=>r.link.geo===fGeo);
+    if(search){
+      rows = rows.filter(r =>
+        (r.fan && r.fan.name.toLowerCase().includes(search)) ||
+        (r.cre && r.cre.name.toLowerCase().includes(search)) ||
+        (r.link.geo||'').toLowerCase().includes(search) ||
+        (r.link.postUrls||[]).some(u=>u.toLowerCase().includes(search))
+      );
+    }
+    rows.sort((a,b)=>(b.link.createdAt||0)-(a.link.createdAt||0));
+
+    document.getElementById('resultCount').textContent = `Найдено: ${rows.length}`;
+
+    if(rows.length === 0){
+      tableWrap.innerHTML = '<div class="empty-state">Связей не найдено. Создайте связь на доске, соединив фанпейдж с креативом.</div>';
+      return;
+    }
+
+    let html = '<table><thead><tr><th>Слой</th><th>Фанпейдж</th><th>Креатив</th><th>Гео</th><th>Ссылки на посты</th><th>Действия</th></tr></thead><tbody>';
+    rows.forEach(r => {
+      const fanName = r.fan ? `<span class="badge-fan">${escapeHtml(r.fan.name)}</span>` : '<span class="muted">удалён</span>';
+      const creName = r.cre ? `<span class="badge-cre">${escapeHtml(r.cre.name)}</span>` : '<span class="muted">удалён</span>';
+      const layerHtml = `<span class="badge-layer">${escapeHtml(layerName(r.link.layerId))}</span>`;
+      const urls = r.link.postUrls || [];
+      const urlsHtml = urls.length
+        ? urls.map((u,i)=>`<div class="link-row"><span class="num">${i+1}.</span><a href="${escapeHtml(u)}" target="_blank" rel="noopener">${escapeHtml(u)}</a></div>`).join('')
+        : '<span class="muted">—</span>';
+      html += `<tr data-link-id="${r.link.id}">
+        <td>${layerHtml}</td>
+        <td>${fanName}</td>
+        <td>${creName}</td>
+        <td>${escapeHtml(r.link.geo || '—')}</td>
+        <td class="link-cell">${urlsHtml}</td>
+        <td class="row-actions">
+          <button class="btn-plain edit-link" type="button">✎ Изм.</button>
+          <button class="btn-danger del-link" type="button">✕ Удалить</button>
+        </td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    tableWrap.innerHTML = html;
+  }
+
+  // ---------- VIEW SWITCH ----------
+  function render(){
+    if(currentView === 'board'){ renderBoard(); } else { renderTable(); }
+  }
+
+  document.getElementById('tabBoardBtn').addEventListener('click', ()=>{
+    currentView = 'board';
+    document.getElementById('tabBoardBtn').classList.add('active');
+    document.getElementById('tabTableBtn').classList.remove('active');
+    boardOuter.style.display='flex'; tableView.style.display='none';
+    render();
+  });
+  document.getElementById('tabTableBtn').addEventListener('click', ()=>{
+    currentView = 'table';
+    document.getElementById('tabTableBtn').classList.add('active');
+    document.getElementById('tabBoardBtn').classList.remove('active');
+    boardOuter.style.display='none'; tableView.style.display='block';
+    render();
+  });
+
+  document.getElementById('addFanBtn').addEventListener('click', ()=>addNodePrompt('fan'));
+  document.getElementById('addCreBtn').addEventListener('click', ()=>addNodePrompt('cre'));
+  document.getElementById('manageLayersBtn').addEventListener('click', openLayerManager);
+  document.getElementById('resetBtn').addEventListener('click', ()=>{
+    if(!confirm('Удалить ВСЕ данные доски (все слои, фанпейджи, креативы, связи)? Это необратимо.')) return;
+    state = { layers: [], fanpages: [], creatives: [], links: [], currentLayerId: null };
+    ensureAtLeastOneLayer();
+    saveState(true);
+    populateActiveLayerSelect();
+    render();
+  });
+  document.getElementById('activeLayerSelect').addEventListener('change', (e)=>{
+    state.currentLayerId = e.target.value;
+    saveState(true);
+    render();
+  });
+
+  ['fSearch','fLayer','fFan','fCre','fGeo'].forEach(id=>{
+    document.getElementById(id).addEventListener('input', renderTable);
+    document.getElementById(id).addEventListener('change', renderTable);
+  });
+  document.getElementById('clearFiltersBtn').addEventListener('click', ()=>{
+    ['fSearch','fLayer','fFan','fCre','fGeo'].forEach(id=>document.getElementById(id).value='');
+    renderTable();
+  });
+
+  window.__startBoard = loadState;
+})();
+</script>
+
+<script>
+(function(){
+  // ---------- REST storage shim (talks to our own Node/Postgres backend) ----------
+  window.storage = {
+    async get(key, shared){
+      const res = await fetch('/api/kv/' + encodeURIComponent(key), { credentials: 'include' });
+      if(res.status === 404){ throw new Error('Key not found: ' + key); }
+      if(!res.ok){ throw new Error('Storage error (' + res.status + ')'); }
+      const data = await res.json();
+      return { key, value: data.value, shared: !!shared };
+    },
+    async set(key, value, shared){
+      const res = await fetch('/api/kv/' + encodeURIComponent(key), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ value })
+      });
+      if(!res.ok){ throw new Error('Storage error (' + res.status + ')'); }
+      return { key, value, shared: !!shared };
+    },
+    async delete(key, shared){
+      const res = await fetch('/api/kv/' + encodeURIComponent(key), { method: 'DELETE', credentials: 'include' });
+      if(!res.ok){ throw new Error('Storage error (' + res.status + ')'); }
+      return { key, deleted: true, shared: !!shared };
+    },
+    async list(prefix, shared){
+      const res = await fetch('/api/kv?prefix=' + encodeURIComponent(prefix||''), { credentials: 'include' });
+      if(!res.ok){ throw new Error('Storage error (' + res.status + ')'); }
+      const data = await res.json();
+      return { keys: data.keys, prefix, shared: !!shared };
+    }
+  };
+
+  // ---------- Auth screen ----------
+  const authScreen = document.getElementById('authScreen');
+  const appEl = document.getElementById('app');
+  const authForm = document.getElementById('authForm');
+  const authEmail = document.getElementById('authEmail');
+  const authPassword = document.getElementById('authPassword');
+  const authInvite = document.getElementById('authInvite');
+  const inviteField = document.getElementById('inviteField');
+  const authError = document.getElementById('authError');
+  const authSubmit = document.getElementById('authSubmit');
+  const tabLogin = document.getElementById('authTabLogin');
+  const tabRegister = document.getElementById('authTabRegister');
+  let mode = 'login';
+
+  function setMode(m){
+    mode = m;
+    tabLogin.classList.toggle('active', m==='login');
+    tabRegister.classList.toggle('active', m==='register');
+    inviteField.style.display = m==='register' ? 'flex' : 'none';
+    authSubmit.textContent = m==='login' ? 'Войти' : 'Зарегистрироваться';
+    authError.textContent = '';
+  }
+  tabLogin.addEventListener('click', ()=>setMode('login'));
+  tabRegister.addEventListener('click', ()=>setMode('register'));
+
+  async function showApp(){
+    authScreen.style.display = 'none';
+    appEl.style.display = 'block';
+    window.__startBoard();
+  }
+
+  async function checkSession(){
+    try{
+      const res = await fetch('/api/me', { credentials: 'include' });
+      if(res.ok){ showApp(); return; }
+    }catch(e){ /* server not reachable yet */ }
+    authScreen.style.display = 'flex';
+    appEl.style.display = 'none';
+  }
+
+  authForm.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    authError.textContent = '';
+    authSubmit.disabled = true;
+    try{
+      const url = mode === 'login' ? '/api/login' : '/api/register';
+      const body = { email: authEmail.value.trim(), password: authPassword.value };
+      if(mode === 'register') body.inviteCode = authInvite.value.trim();
+      const res = await fetch(url, {
+        method: 'POST', headers: {'Content-Type':'application/json'}, credentials:'include',
+        body: JSON.stringify(body)
+      });
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok){ authError.textContent = data.error || 'Ошибка. Попробуйте ещё раз.'; authSubmit.disabled = false; return; }
+      showApp();
+    }catch(err){
+      authError.textContent = 'Не удалось связаться с сервером: ' + err.message;
+      authSubmit.disabled = false;
+    }
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', async ()=>{
+    await fetch('/api/logout', { method:'POST', credentials:'include' }).catch(()=>{});
+    location.reload();
+  });
+
+  checkSession();
+})();
+</script>
+</body>
+</html>
