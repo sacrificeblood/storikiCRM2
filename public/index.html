@@ -282,36 +282,9 @@
 </style>
 </head>
 <body>
-<div id="authScreen">
-  <div class="auth-card">
-    <h1><span class="dot" style="width:9px;height:9px;border-radius:50%;background:var(--green); box-shadow:0 0 10px 2px var(--green-glow); display:inline-block;"></span>Доска связок</h1>
-    <div class="sub">Вход для команды</div>
-    <div class="auth-tabs">
-      <button id="authTabLogin" class="active" type="button">Войти</button>
-      <button id="authTabRegister" type="button">Регистрация</button>
-    </div>
-    <div class="auth-error" id="authError"></div>
-    <form id="authForm">
-      <div class="auth-field">
-        <label>Email</label>
-        <input type="email" id="authEmail" autocomplete="username" required>
-      </div>
-      <div class="auth-field">
-        <label>Пароль</label>
-        <input type="password" id="authPassword" autocomplete="current-password" required minlength="6">
-      </div>
-      <div class="auth-field" id="inviteField" style="display:none;">
-        <label>Код приглашения</label>
-        <input type="text" id="authInvite" autocomplete="off">
-      </div>
-      <button class="auth-submit" id="authSubmit" type="submit">Войти</button>
-    </form>
-  </div>
-</div>
-
-<div id="app" style="display:none;">
+<div id="app">
   <header>
-    <h1><span class="dot"></span>Доска связок <span style="font-size:11px; color:var(--text-dim); font-weight:400;">build 7</span></h1>
+    <h1><span class="dot"></span>Доска связок <span style="font-size:11px; color:var(--text-dim); font-weight:400;">build 8 · без логина</span></h1>
     <div class="tabs">
       <button class="tab-btn active" data-view="board" id="tabBoardBtn">Доска</button>
       <button class="tab-btn" data-view="table" id="tabTableBtn">Таблица</button>
@@ -322,7 +295,6 @@
       <button class="btn btn-cre" id="addCreBtn">+ Нейминг креатива</button>
       <button class="btn btn-layer" id="manageLayersBtn">Слои</button>
       <button class="btn btn-ghost" id="resetBtn">Очистить всё</button>
-      <button class="btn btn-ghost" id="logoutBtn">Выйти</button>
     </div>
   </header>
 
@@ -1286,73 +1258,8 @@
     }
   };
 
-  // ---------- Auth screen ----------
-  const authScreen = document.getElementById('authScreen');
-  const appEl = document.getElementById('app');
-  const authForm = document.getElementById('authForm');
-  const authEmail = document.getElementById('authEmail');
-  const authPassword = document.getElementById('authPassword');
-  const authInvite = document.getElementById('authInvite');
-  const inviteField = document.getElementById('inviteField');
-  const authError = document.getElementById('authError');
-  const authSubmit = document.getElementById('authSubmit');
-  const tabLogin = document.getElementById('authTabLogin');
-  const tabRegister = document.getElementById('authTabRegister');
-  let mode = 'login';
-
-  function setMode(m){
-    mode = m;
-    tabLogin.classList.toggle('active', m==='login');
-    tabRegister.classList.toggle('active', m==='register');
-    inviteField.style.display = m==='register' ? 'flex' : 'none';
-    authSubmit.textContent = m==='login' ? 'Войти' : 'Зарегистрироваться';
-    authError.textContent = '';
-  }
-  tabLogin.addEventListener('click', ()=>setMode('login'));
-  tabRegister.addEventListener('click', ()=>setMode('register'));
-
-  async function showApp(){
-    authScreen.style.display = 'none';
-    appEl.style.display = 'block';
-    window.__startBoard();
-  }
-
-  async function checkSession(){
-    try{
-      const res = await fetch('/api/me', { credentials: 'include' });
-      if(res.ok){ showApp(); return; }
-    }catch(e){ /* server not reachable yet */ }
-    authScreen.style.display = 'flex';
-    appEl.style.display = 'none';
-  }
-
-  authForm.addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    authError.textContent = '';
-    authSubmit.disabled = true;
-    try{
-      const url = mode === 'login' ? '/api/login' : '/api/register';
-      const body = { email: authEmail.value.trim(), password: authPassword.value };
-      if(mode === 'register') body.inviteCode = authInvite.value.trim();
-      const res = await fetch(url, {
-        method: 'POST', headers: {'Content-Type':'application/json'}, credentials:'include',
-        body: JSON.stringify(body)
-      });
-      const data = await res.json().catch(()=>({}));
-      if(!res.ok){ authError.textContent = data.error || 'Ошибка. Попробуйте ещё раз.'; authSubmit.disabled = false; return; }
-      showApp();
-    }catch(err){
-      authError.textContent = 'Не удалось связаться с сервером: ' + err.message;
-      authSubmit.disabled = false;
-    }
-  });
-
-  document.getElementById('logoutBtn').addEventListener('click', async ()=>{
-    await fetch('/api/logout', { method:'POST', credentials:'include' }).catch(()=>{});
-    location.reload();
-  });
-
-  checkSession();
+  // No login required — the board starts immediately. Access is only as private as the URL itself.
+  window.__startBoard();
 })();
 </script>
 </body>
