@@ -147,13 +147,17 @@
     font-size:12px; line-height:18px; text-align:center; cursor:pointer; padding:0;
   }
   .note .del:hover{background:var(--danger); color:#210007;}
+  .note .edit-btn{
+    right:30px; background:rgba(55,224,127,0.12); color:var(--green);
+  }
+  .note .edit-btn:hover{background:var(--green); color:#04150a;}
   .connector{
-    position:absolute; right:-9px; top:50%; transform:translateY(-50%);
+    position:absolute; left:-9px; top:50%; transform:translateY(-50%);
     width:16px; height:16px; border-radius:50%;
     background:var(--bg); border:3px solid var(--green); cursor:crosshair; z-index:5;
     box-shadow:0 0 8px var(--green-glow);
   }
-  .note.cre .connector{right:auto; left:-9px; border-color:var(--teal); box-shadow:0 0 8px var(--teal-glow);}
+  .note.cre .connector{left:auto; right:-9px; border-color:var(--teal); box-shadow:0 0 8px var(--teal-glow);}
   .note.linking-src{box-shadow:0 0 0 2px var(--teal), 0 0 18px var(--teal-glow);}
 
   /* TABLE VIEW */
@@ -284,7 +288,7 @@
 <body>
 <div id="app">
   <header>
-    <h1><span class="dot"></span>Доска связок <span style="font-size:11px; color:var(--text-dim); font-weight:400;">build 8 · без логина</span></h1>
+    <h1><span class="dot"></span>Доска связок</h1>
     <div class="tabs">
       <button class="tab-btn active" data-view="board" id="tabBoardBtn">Доска</button>
       <button class="tab-btn" data-view="table" id="tabTableBtn">Таблица</button>
@@ -303,7 +307,6 @@
 
     <div id="board-outer" style="display:none; flex:1; flex-direction:column; min-height:0;">
       <div class="board-topbar">
-        <span>Перетаскивайте карточки, тяните точку от фанпейджа к креативу. Правая кнопка мыши на пустом месте — создать карточку. Колесо — зум, перетаскивание фона — панорама.</span>
         <div class="zoom-controls">
           <button id="zoomOutBtn" title="Уменьшить">−</button>
           <span class="zoom-pct" id="zoomPct">100%</span>
@@ -356,7 +359,22 @@
   const OLD_STORAGE_KEY = 'crm-board-data';
   const MAX_URLS = 4;
   let state = { layers: [], fanpages: [], creatives: [], links: [], currentLayerId: null };
-  let currentView = 'board';
+  const VIEW_STATE_KEY = 'adboard-view-state';
+  function loadViewState(){
+    try{
+      const raw = localStorage.getItem(VIEW_STATE_KEY);
+      if(!raw) return null;
+      return JSON.parse(raw);
+    }catch(e){ return null; }
+  }
+  function saveViewState(){
+    try{
+      localStorage.setItem(VIEW_STATE_KEY, JSON.stringify({ zoom, panX, panY, currentView }));
+    }catch(e){ /* private browsing or storage disabled — just skip persistence */ }
+  }
+  const savedView = loadViewState();
+
+  let currentView = savedView && savedView.currentView ? savedView.currentView : 'board';
   let dragging = null;
   let connecting = null;
 
@@ -368,7 +386,9 @@
   const loadingBox = document.getElementById('loadingBox');
   const tableWrap = document.getElementById('tableWrap');
 
-  let zoom = 1, panX = 30, panY = 30;
+  let zoom = (savedView && typeof savedView.zoom === 'number') ? savedView.zoom : 1;
+  let panX = (savedView && typeof savedView.panX === 'number') ? savedView.panX : 30;
+  let panY = (savedView && typeof savedView.panY === 'number') ? savedView.panY : 30;
   let panning = null;
   const ZOOM_MIN = 0.25, ZOOM_MAX = 2.5;
 
@@ -377,6 +397,7 @@
   function applyTransform(){
     boardCanvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
     document.getElementById('zoomPct').textContent = Math.round(zoom*100) + '%';
+    saveViewState();
   }
 
   function toCanvasCoords(clientX, clientY){
@@ -512,7 +533,13 @@
     ensureAtLeastOneLayer();
 
     loadingBox.style.display='none';
-    boardOuter.style.display='flex';
+    if(currentView === 'table'){
+      document.getElementById('tabTableBtn').classList.add('active');
+      document.getElementById('tabBoardBtn').classList.remove('active');
+      boardOuter.style.display='none'; tableView.style.display='block';
+    }else{
+      boardOuter.style.display='flex';
+    }
     setupTableDelegation();
     populateActiveLayerSelect();
     applyTransform();
@@ -548,7 +575,7 @@
   // ---------- BOARD RENDER ----------
   function ensurePosition(item, index, side){
     if(typeof item.x === 'number' && typeof item.y === 'number') return;
-    item.x = side === 'fan' ? 40 : 580;
+    item.x = side === 'fan' ? 580 : 40;
     item.y = 30 + index * 112;
   }
 
@@ -598,8 +625,27 @@
     del.addEventListener('click', safe((e)=>{ e.stopPropagation(); deleteNode(item.id, kind); }));
     div.appendChild(del);
 
+    const edit = document.createElement('button');
+    edit.className='del edit-btn'; edit.textContent='✎'; edit.title='Редактировать';
+    edit.addEventListener('mousedown', (e)=>e.stopPropagation());
+    edit.addEventListener('click', safe((e)=>{ e.stopPropagation(); openNodeEditor(item.id, kind); }));
+    div.appendChild(edit);
+
     const name = document.createElement('div'); name.className='name'; name.textContent = item.name;
     div.appendChild(name);
+
+    if(kind === 'fan' && item.pageUrl){
+      const linkIcon = document.createElement('a');
+      linkIcon.href = item.pageUrl;
+      linkIcon.target = '_blank';
+      linkIcon.rel = 'noopener';
+      linkIcon.textContent = '🔗';
+      linkIcon.title = item.pageUrl;
+      linkIcon.style.cssText = 'position:absolute; top:8px; right:52px; font-size:12px; text-decoration:none; cursor:pointer;';
+      linkIcon.addEventListener('mousedown', (e)=>e.stopPropagation());
+      linkIcon.addEventListener('click', (e)=>e.stopPropagation());
+      div.appendChild(linkIcon);
+    }
 
     const linkCount = activeLinks().filter(l => kind==='fan' ? l.fanpageId===item.id : l.creativeId===item.id).length;
     const sub = document.createElement('div'); sub.className='sub';
@@ -611,20 +657,21 @@
     div.appendChild(connector);
 
     div.addEventListener('mousedown', (e)=>{
-      if(e.target === connector) return;
+      if(e.target === connector || e.target === del || e.target === edit) return;
       const c = toCanvasCoords(e.clientX, e.clientY);
-      dragging = { id:item.id, kind, offsetX: c.x - item.x, offsetY: c.y - item.y };
+      dragging = { id:item.id, kind, offsetX: c.x - item.x, offsetY: c.y - item.y, startClientX: e.clientX, startClientY: e.clientY, moved:false };
       e.preventDefault();
       e.stopPropagation();
     });
 
     connector.addEventListener('mousedown', (e)=>{
       e.stopPropagation(); e.preventDefault();
-      if(kind !== 'fan') { showToast('Тяните связь начиная с фанпейджа'); return; }
+      const anchorX = kind === 'fan' ? item.x : item.x + 190;
       const c = toCanvasCoords(e.clientX, e.clientY);
       connecting = {
         fromId: item.id,
-        x1: item.x + 190, y1: item.y + 37,
+        fromKind: kind,
+        x1: anchorX, y1: item.y + 37,
         mouseX: c.x, mouseY: c.y
       };
       div.classList.add('linking-src');
@@ -637,8 +684,8 @@
   // Sibling connections (same fanpage+creative pair) are offset perpendicular to the connection
   // direction — this keeps them visually separated at any angle, not just for near-horizontal lines.
   function computeGeometry(fanNode, creNode, link){
-    const baseX1 = fanNode.x + 190, baseY1 = fanNode.y + 37;
-    const baseX2 = creNode.x, baseY2 = creNode.y + 37;
+    const baseX1 = fanNode.x, baseY1 = fanNode.y + 37;
+    const baseX2 = creNode.x + 190, baseY2 = creNode.y + 37;
 
     const siblings = activeLinks().filter(l=>l.fanpageId===link.fanpageId && l.creativeId===link.creativeId);
     const idx = Math.max(0, siblings.findIndex(l=>l.id===link.id));
@@ -741,14 +788,25 @@
   });
 
   document.addEventListener('mouseup', (e)=>{
-    if(dragging){ saveState(); dragging = null; }
+    if(dragging){
+      const moved = Math.abs(e.clientX - dragging.startClientX) > 5 || Math.abs(e.clientY - dragging.startClientY) > 5;
+      if(moved){
+        saveState();
+      }else{
+        openNodeEditor(dragging.id, dragging.kind);
+      }
+      dragging = null;
+    }
     if(connecting){
       const el = document.elementFromPoint(e.clientX, e.clientY);
-      const noteEl = el ? el.closest('.note.cre') : null;
+      const wantKind = connecting.fromKind === 'fan' ? 'cre' : 'fan';
+      const noteEl = el ? el.closest('.note.' + wantKind) : null;
       boardCanvas.querySelectorAll('.linking-src').forEach(n=>n.classList.remove('linking-src'));
       if(noteEl){
-        const creativeId = noteEl.dataset.id;
-        openLinkModal(null, connecting.fromId, creativeId);
+        const targetId = noteEl.dataset.id;
+        const fanpageId = connecting.fromKind === 'fan' ? connecting.fromId : targetId;
+        const creativeId = connecting.fromKind === 'fan' ? targetId : connecting.fromId;
+        openLinkModal(null, fanpageId, creativeId);
       }
       connecting = null;
       drawStrings();
@@ -775,6 +833,64 @@
   }
 
   // ---------- ADD NODE MODAL ----------
+  function openNodeEditor(id, kind){
+    const arr = kind === 'fan' ? state.fanpages : state.creatives;
+    const item = arr.find(i => i.id === id);
+    if(!item) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `<h3>${kind==='fan' ? 'Фанпейдж' : 'Нейминг креатива'}</h3>`;
+
+    const nameField = document.createElement('div'); nameField.className='field';
+    nameField.innerHTML = `<label>Название</label>`;
+    const nameInput = document.createElement('input');
+    nameInput.value = item.name;
+    nameField.appendChild(nameInput);
+    modal.appendChild(nameField);
+
+    let urlInput = null;
+    if(kind === 'fan'){
+      const urlField = document.createElement('div'); urlField.className='field';
+      urlField.innerHTML = `<label>Ссылка на фанпейдж</label>`;
+      urlInput = document.createElement('input');
+      urlInput.placeholder = 'https://facebook.com/...';
+      urlInput.value = item.pageUrl || '';
+      urlField.appendChild(urlInput);
+      modal.appendChild(urlField);
+    }
+
+    const actions = document.createElement('div'); actions.className='modal-actions';
+    const delBtn = document.createElement('button');
+    delBtn.className='btn btn-danger'; delBtn.textContent='Удалить'; delBtn.type='button';
+    delBtn.addEventListener('click', safe(()=>{
+      document.body.removeChild(overlay);
+      deleteNode(id, kind);
+    }));
+    actions.appendChild(delBtn);
+    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
+    cancelBtn.addEventListener('click', safe(()=>document.body.removeChild(overlay)));
+    actions.appendChild(cancelBtn);
+    const saveBtn = document.createElement('button'); saveBtn.className='btn btn-fan'; saveBtn.textContent='Сохранить'; saveBtn.type='button';
+    saveBtn.addEventListener('click', safe(()=>{
+      if(!nameInput.value.trim()){ showToast('Введите название'); return; }
+      item.name = nameInput.value.trim();
+      if(kind === 'fan'){ item.pageUrl = urlInput.value.trim(); }
+      saveState(true);
+      render();
+      document.body.removeChild(overlay);
+    }));
+    actions.appendChild(saveBtn);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+    nameInput.focus();
+  }
+
   function addNodePrompt(kind, pos){
     const label = kind==='fan' ? 'Название фанпейджа' : 'Нейминг креатива';
     showSimpleModal({
@@ -1169,20 +1285,24 @@
     if(currentView === 'board'){ renderBoard(); } else { renderTable(); }
   }
 
-  document.getElementById('tabBoardBtn').addEventListener('click', ()=>{
+  function switchToBoardView(){
     currentView = 'board';
     document.getElementById('tabBoardBtn').classList.add('active');
     document.getElementById('tabTableBtn').classList.remove('active');
     boardOuter.style.display='flex'; tableView.style.display='none';
+    saveViewState();
     render();
-  });
-  document.getElementById('tabTableBtn').addEventListener('click', ()=>{
+  }
+  function switchToTableView(){
     currentView = 'table';
     document.getElementById('tabTableBtn').classList.add('active');
     document.getElementById('tabBoardBtn').classList.remove('active');
     boardOuter.style.display='none'; tableView.style.display='block';
+    saveViewState();
     render();
-  });
+  }
+  document.getElementById('tabBoardBtn').addEventListener('click', switchToBoardView);
+  document.getElementById('tabTableBtn').addEventListener('click', switchToTableView);
 
   function safe(fn){
     return function(...args){
