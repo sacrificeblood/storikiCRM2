@@ -141,7 +141,8 @@
   .note:active{cursor:grabbing;}
   .note:hover{box-shadow:0 6px 24px rgba(0,0,0,0.6), 0 0 16px var(--green-glow); z-index:20;}
   .note.cre:hover{box-shadow:0 6px 24px rgba(0,0,0,0.6), 0 0 16px var(--teal-glow);}
-  .note .name{font-weight:700; color:var(--text); word-break:break-word; padding-right:18px;}
+  .note .name{font-weight:700; color:var(--text); word-break:break-word; padding-right:2px;}
+  .note .icon-spacer{float:right; width:78px; height:24px; shape-margin:0;}
   .note .sub{font-size:11px; color:var(--text-dim); margin-top:5px; letter-spacing:0.2px;}
   .note .del{
     position:absolute; top:8px; right:8px; width:18px; height:18px;
@@ -215,6 +216,12 @@
     color:var(--text-dim); cursor:pointer; font-size:11px; font-weight:600;
   }
   .link-action-btn:hover{border-color:var(--green); color:var(--green);}
+  .link-icon-btn{
+    flex:none; width:20px; height:20px; border-radius:5px; border:1px solid var(--border);
+    background:var(--panel-2); color:var(--text-dim); cursor:pointer; font-size:10.5px;
+    line-height:1; padding:0; margin-left:2px;
+  }
+  .link-icon-btn:hover{border-color:var(--green); color:var(--green); background:rgba(55,224,127,0.1);}
   .link-row .num{color:var(--text-dim); font-size:11px; width:14px; flex:none;}
   .link-cell a{
     color:#79d9ff; text-decoration:none; font-size:12.5px;
@@ -688,6 +695,10 @@
     edit.addEventListener('mousedown', (e)=>e.stopPropagation());
     edit.addEventListener('click', safe((e)=>{ e.stopPropagation(); openNodeEditor(item.id, kind); }));
     div.appendChild(edit);
+
+    const spacer = document.createElement('div');
+    spacer.className = 'icon-spacer';
+    div.appendChild(spacer);
 
     const name = document.createElement('div'); name.className='name'; name.textContent = item.name;
     div.appendChild(name);
@@ -1533,6 +1544,8 @@
                 <label class="link-toggle-btn" for="${cbId}" title="Показать полностью">▸</label>
                 ${u.naming ? `<span class="badge-layer link-naming-short" title="${escapeHtml(u.naming)}">${shortNaming}</span>` : ''}
                 <a href="${escapeHtml(u.url)}" target="_blank" rel="noopener" title="${escapeHtml(u.url)}">${escapeHtml(shortLinkLabel(u.url))}</a>
+                <button type="button" class="link-icon-btn link-copy-btn" data-url="${escapeHtml(u.url)}" title="Копировать ссылку">📋</button>
+                <button type="button" class="link-icon-btn link-open-btn" data-url="${escapeHtml(u.url)}" title="Открыть в новой вкладке">↗</button>
               </div>
               <div class="link-full-details">
                 ${u.naming ? `<div><strong>Нейминг:</strong> ${escapeHtml(u.naming)}</div>` : ''}
