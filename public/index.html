@@ -311,7 +311,7 @@
 
 <div id="app" style="display:none;">
   <header>
-    <h1><span class="dot"></span>Доска связок</h1>
+    <h1><span class="dot"></span>Доска связок <span style="font-size:11px; color:var(--text-dim); font-weight:400;">build 7</span></h1>
     <div class="tabs">
       <button class="tab-btn active" data-view="board" id="tabBoardBtn">Доска</button>
       <button class="tab-btn" data-view="table" id="tabTableBtn">Таблица</button>
@@ -623,7 +623,7 @@
 
     const del = document.createElement('button');
     del.className='del'; del.textContent='×'; del.title='Удалить';
-    del.addEventListener('click', (e)=>{ e.stopPropagation(); deleteNode(item.id, kind); });
+    del.addEventListener('click', safe((e)=>{ e.stopPropagation(); deleteNode(item.id, kind); }));
     div.appendChild(del);
 
     const name = document.createElement('div'); name.className='name'; name.textContent = item.name;
@@ -888,14 +888,14 @@
     const actions = document.createElement('div'); actions.className='modal-actions';
     const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
     const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
-    cancelBtn.addEventListener('click', ()=>document.body.removeChild(overlay));
+    cancelBtn.addEventListener('click', safe(()=>document.body.removeChild(overlay)));
     actions.appendChild(cancelBtn);
     const saveBtn = document.createElement('button'); saveBtn.className='btn btn-fan'; saveBtn.textContent='Сохранить'; saveBtn.type='button';
-    saveBtn.addEventListener('click', ()=>{
+    saveBtn.addEventListener('click', safe(()=>{
       if(!inp.value.trim()){ showToast('Введите название'); return; }
       onSubmit(inp.value);
       document.body.removeChild(overlay);
-    });
+    }));
     actions.appendChild(saveBtn);
     modal.appendChild(actions);
     overlay.appendChild(modal);
@@ -936,7 +936,7 @@
         row.appendChild(cnt);
         const del = document.createElement('button'); del.textContent='×'; del.type='button';
         del.title = 'Удалить слой со всем содержимым';
-        del.addEventListener('click', ()=>{
+        del.addEventListener('click', safe(()=>{
           if(state.layers.length <= 1){ showToast('Должен остаться хотя бы один слой'); return; }
           if(!confirm(`Удалить слой "${layer.name}" вместе с его фанпейджами, креативами и связями (${fanCount + creCount} карточек)? Это необратимо.`)) return;
           state.layers = state.layers.filter(l=>l.id!==layer.id);
@@ -948,7 +948,7 @@
           renderList();
           populateActiveLayerSelect();
           render();
-        });
+        }));
         row.appendChild(del);
         list.appendChild(row);
       });
@@ -958,7 +958,7 @@
     const addRow = document.createElement('div'); addRow.className='layer-add-row';
     const addInp = document.createElement('input'); addInp.placeholder='Название нового слоя';
     const addBtn = document.createElement('button'); addBtn.className='btn btn-layer'; addBtn.textContent='+ Добавить'; addBtn.type='button';
-    addBtn.addEventListener('click', ()=>{
+    addBtn.addEventListener('click', safe(()=>{
       if(!addInp.value.trim()){ showToast('Введите название слоя'); return; }
       const newLayer = { id: uid(), name: addInp.value.trim() };
       state.layers.push(newLayer);
@@ -966,7 +966,7 @@
       saveState(true);
       renderList();
       populateActiveLayerSelect();
-    });
+    }));
     addInp.addEventListener('keydown', (e)=>{ if(e.key==='Enter') addBtn.click(); });
     addRow.appendChild(addInp); addRow.appendChild(addBtn);
     modal.appendChild(addRow);
@@ -1045,22 +1045,22 @@
     if(isEdit){
       const delBtn = document.createElement('button');
       delBtn.className='btn btn-danger'; delBtn.textContent='Удалить связь'; delBtn.type='button';
-      delBtn.addEventListener('click', ()=>{
+      delBtn.addEventListener('click', safe(()=>{
         if(confirm('Удалить эту связь?')){
           state.links = state.links.filter(l=>l.id!==existingLink.id);
           saveState(true);
           render();
           document.body.removeChild(overlay);
         }
-      });
+      }));
       actions.appendChild(delBtn);
     }
     const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
     const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
-    cancelBtn.addEventListener('click', ()=>document.body.removeChild(overlay));
+    cancelBtn.addEventListener('click', safe(()=>document.body.removeChild(overlay)));
     actions.appendChild(cancelBtn);
     const saveBtn = document.createElement('button'); saveBtn.className='btn btn-fan'; saveBtn.textContent='Сохранить'; saveBtn.type='button';
-    saveBtn.addEventListener('click', ()=>{
+    saveBtn.addEventListener('click', safe(()=>{
       const cleanUrls = urls.map(u=>u.trim()).filter(Boolean).slice(0, MAX_URLS);
       const geo = geoInput.value.trim();
       if(isEdit){
@@ -1072,7 +1072,7 @@
       saveState(true);
       render();
       document.body.removeChild(overlay);
-    });
+    }));
     actions.appendChild(saveBtn);
     modal.appendChild(actions);
     overlay.appendChild(modal);
