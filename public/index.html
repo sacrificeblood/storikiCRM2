@@ -188,7 +188,11 @@
   .link-cell{max-width:260px;}
   .link-row{display:flex; align-items:center; gap:6px; margin-bottom:3px;}
   .link-row .num{color:var(--text-dim); font-size:11px; width:14px; flex:none;}
-  .link-cell a{color:#79d9ff; text-decoration:none; word-break:break-all; font-size:12.5px;}
+  .link-cell a{
+    color:#79d9ff; text-decoration:none; font-size:12.5px;
+    display:inline-block; max-width:220px; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; vertical-align:middle;
+  }
   .link-cell a:hover{text-decoration:underline;}
   .muted{color:var(--text-dim);}
   .row-actions{display:flex; gap:6px;}
@@ -300,6 +304,7 @@
       <button class="btn btn-fan" id="addFanBtn">+ Фанпейдж</button>
       <button class="btn btn-cre" id="addCreBtn">+ Нейминг креатива</button>
       <button class="btn btn-layer" id="manageLayersBtn">Слои</button>
+      <button class="btn btn-ghost" id="trashBtn">История</button>
       <button class="btn btn-ghost" id="resetBtn">Очистить всё</button>
     </div>
   </header>
@@ -367,7 +372,7 @@
       return { naming: u.naming || '', url: u.url || '' };
     }).filter(u=>u.url).slice(0, MAX_URLS);
   }
-  let state = { layers: [], fanpages: [], creatives: [], links: [], currentLayerId: null };
+  let state = { layers: [], fanpages: [], creatives: [], links: [], deletedItems: [], currentLayerId: null };
   const VIEW_STATE_KEY = 'adboard-view-state';
   function loadViewState(){
     try{
@@ -473,6 +478,16 @@
   function uid(){ return 'id' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
   function hashStr(s){ let h=0; for(let i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; } return Math.abs(h); }
   function escapeHtml(s){ const d=document.createElement('div'); d.textContent=String(s==null?'':s); return d.innerHTML; }
+  function shortLinkLabel(url){
+    try{
+      const u = new URL(url);
+      let path = u.pathname + u.search;
+      if(path.length > 22) path = path.slice(0, 22) + '…';
+      return u.hostname.replace(/^www\./,'') + (path === '/' ? '' : path);
+    }catch(e){
+      return url.length > 34 ? url.slice(0, 34) + '…' : url;
+    }
+  }
 
   function showToast(msg){
     const t = document.getElementById('toast');
@@ -506,6 +521,7 @@
           return l;
         });
         state.currentLayerId = parsed.currentLayerId || null;
+        state.deletedItems = parsed.deletedItems || [];
       } else {
         // try migrating legacy single-layer data (pre-layers version)
         try{
@@ -831,6 +847,13 @@
     }
   });
 
+  const MAX_TRASH = 50;
+  function pushToTrash(type, data, label){
+    if(!Array.isArray(state.deletedItems)) state.deletedItems = [];
+    state.deletedItems.unshift({ id: uid(), type, data: JSON.parse(JSON.stringify(data)), label, deletedAt: Date.now() });
+    if(state.deletedItems.length > MAX_TRASH) state.deletedItems.length = MAX_TRASH;
+  }
+
   function deleteNode(id, kind){
     const item = (kind==='fan'?state.fanpages:state.creatives).find(i=>i.id===id);
     if(!item) return;
@@ -839,6 +862,17 @@
       ? `Удалить "${item.name}"? Также будет удалено связей: ${linkedCount}.`
       : `Удалить "${item.name}"?`;
     if(!confirm(msg)) return;
+
+    const fanMap = {}; state.fanpages.forEach(f=>fanMap[f.id]=f);
+    const creMap = {}; state.creatives.forEach(c=>creMap[c.id]=c);
+    const cascaded = state.links.filter(l => kind==='fan'? l.fanpageId===id : l.creativeId===id);
+    cascaded.forEach(l=>{
+      const fn = fanMap[l.fanpageId] ? fanMap[l.fanpageId].name : '?';
+      const cn = creMap[l.creativeId] ? creMap[l.creativeId].name : '?';
+      pushToTrash('link', l, fn + ' → ' + cn);
+    });
+    pushToTrash(kind, item, item.name);
+
     if(kind==='fan'){
       state.fanpages = state.fanpages.filter(i=>i.id!==id);
       state.links = state.links.filter(l=>l.fanpageId!==id);
@@ -848,6 +882,29 @@
     }
     saveState(true);
     render();
+  }
+
+  function restoreTrashItem(trashId){
+    const entry = (state.deletedItems||[]).find(t=>t.id===trashId);
+    if(!entry) return;
+    if(entry.type === 'link'){
+      const fanExists = state.fanpages.some(f=>f.id===entry.data.fanpageId);
+      const creExists = state.creatives.some(c=>c.id===entry.data.creativeId);
+      if(!fanExists || !creExists){
+        showToast('Сначала восстановите фанпейдж и креатив для этой связи');
+        return;
+      }
+      state.links.push(entry.data);
+    }else if(entry.type === 'fan' || entry.type === 'cre'){
+      if(!state.layers.some(l=>l.id===entry.data.layerId)){
+        entry.data.layerId = state.currentLayerId;
+      }
+      (entry.type==='fan' ? state.fanpages : state.creatives).push(entry.data);
+    }
+    state.deletedItems = state.deletedItems.filter(t=>t.id!==trashId);
+    saveState(true);
+    render();
+    showToast('Восстановлено');
   }
 
   // ---------- ADD NODE MODAL ----------
@@ -1026,6 +1083,80 @@
   }
 
   // ---------- LAYER MANAGER ----------
+  function timeAgo(ts){
+    const diff = Math.max(0, Date.now() - ts);
+    const min = Math.floor(diff/60000);
+    if(min < 1) return 'только что';
+    if(min < 60) return min + ' мин назад';
+    const hr = Math.floor(min/60);
+    if(hr < 24) return hr + ' ч назад';
+    const days = Math.floor(hr/24);
+    return days + ' дн назад';
+  }
+
+  function openTrashManager(){
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `<h3>История удалений</h3><p class="muted" style="font-size:12.5px;margin-top:-8px;">Последние ${MAX_TRASH} удалённых фанпейджей, креативов и связей — можно вернуть.</p>`;
+
+    const list = document.createElement('div');
+    modal.appendChild(list);
+
+    function renderList(){
+      list.innerHTML = '';
+      const items = state.deletedItems || [];
+      if(items.length === 0){
+        const empty = document.createElement('div');
+        empty.className = 'muted'; empty.style.cssText='font-size:13px; padding:10px 0;';
+        empty.textContent = 'Пока ничего не удалялось.';
+        list.appendChild(empty);
+        return;
+      }
+      items.forEach(entry => {
+        const row = document.createElement('div'); row.className='layer-row';
+        const typeLabel = entry.type === 'fan' ? 'Фанпейдж' : entry.type === 'cre' ? 'Креатив' : 'Связь';
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+        info.innerHTML = `<span class="muted" style="font-size:11px;">${typeLabel} · ${timeAgo(entry.deletedAt)}</span><br>${escapeHtml(entry.label||'—')}`;
+        row.appendChild(info);
+        const restoreBtn = document.createElement('button');
+        restoreBtn.textContent = '↺'; restoreBtn.title = 'Восстановить';
+        restoreBtn.style.cssText = 'width:28px; height:28px; border-radius:6px; border:1px solid var(--border); background:var(--panel-2); color:var(--green); cursor:pointer; font-size:15px;';
+        restoreBtn.addEventListener('click', safe(()=>{
+          restoreTrashItem(entry.id);
+          renderList();
+        }));
+        row.appendChild(restoreBtn);
+        list.appendChild(row);
+      });
+    }
+    renderList();
+
+    const actions = document.createElement('div'); actions.className='modal-actions';
+    if((state.deletedItems||[]).length){
+      const clearBtn = document.createElement('button');
+      clearBtn.className='btn btn-danger'; clearBtn.textContent='Очистить историю'; clearBtn.type='button';
+      clearBtn.addEventListener('click', safe(()=>{
+        if(!confirm('Очистить всю историю удалений? Восстановить будет уже нельзя.')) return;
+        state.deletedItems = [];
+        saveState(true);
+        renderList();
+      }));
+      actions.appendChild(clearBtn);
+    }
+    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const closeBtn = document.createElement('button'); closeBtn.className='btn btn-plain'; closeBtn.textContent='Готово'; closeBtn.type='button';
+    closeBtn.addEventListener('click', ()=>document.body.removeChild(overlay));
+    actions.appendChild(closeBtn);
+    modal.appendChild(actions);
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+  }
+
   function openLayerManager(){
     const overlay = document.createElement('div');
     overlay.className = 'overlay';
@@ -1180,6 +1311,7 @@
       delBtn.className='btn btn-danger'; delBtn.textContent='Удалить связь'; delBtn.type='button';
       delBtn.addEventListener('click', safe(()=>{
         if(confirm('Удалить эту связь?')){
+          pushToTrash('link', existingLink, (fan?fan.name:'?') + ' → ' + (cre?cre.name:'?'));
           state.links = state.links.filter(l=>l.id!==existingLink.id);
           saveState(true);
           render();
@@ -1270,6 +1402,9 @@
         openLinkModal(link);
       }else if(delBtn){
         if(confirm('Удалить эту связь?')){
+          const fan = state.fanpages.find(f=>f.id===link.fanpageId);
+          const cre = state.creatives.find(c=>c.id===link.creativeId);
+          pushToTrash('link', link, (fan?fan.name:'?') + ' → ' + (cre?cre.name:'?'));
           state.links = state.links.filter(l=>l.id!==id);
           saveState(true);
           render();
@@ -1323,7 +1458,7 @@
       const layerHtml = `<span class="badge-layer">${escapeHtml(layerName(r.link.layerId))}</span>`;
       const urls = r.link.postUrls || [];
       const urlsHtml = urls.length
-        ? urls.map((u,i)=>`<div class="link-row"><span class="num">${i+1}.</span>${u.naming ? `<span class="badge-layer" style="margin-right:4px;">${escapeHtml(u.naming)}</span>` : ''}<a href="${escapeHtml(u.url)}" target="_blank" rel="noopener">${escapeHtml(u.url)}</a></div>`).join('')
+        ? urls.map((u,i)=>`<div class="link-row"><span class="num">${i+1}.</span>${u.naming ? `<span class="badge-layer" style="margin-right:4px;">${escapeHtml(u.naming)}</span>` : ''}<a href="${escapeHtml(u.url)}" target="_blank" rel="noopener" title="${escapeHtml(u.url)}">${escapeHtml(shortLinkLabel(u.url))}</a></div>`).join('')
         : '<span class="muted">—</span>';
       html += `<tr data-link-id="${r.link.id}">
         <td>${layerHtml}</td>
@@ -1378,9 +1513,10 @@
   document.getElementById('addFanBtn').addEventListener('click', safe(()=>addNodePrompt('fan')));
   document.getElementById('addCreBtn').addEventListener('click', safe(()=>addNodePrompt('cre')));
   document.getElementById('manageLayersBtn').addEventListener('click', safe(openLayerManager));
+  document.getElementById('trashBtn').addEventListener('click', safe(openTrashManager));
   document.getElementById('resetBtn').addEventListener('click', ()=>{
     if(!confirm('Удалить ВСЕ данные доски (все слои, фанпейджи, креативы, связи)? Это необратимо.')) return;
-    state = { layers: [], fanpages: [], creatives: [], links: [], currentLayerId: null };
+    state = { layers: [], fanpages: [], creatives: [], links: [], deletedItems: [], currentLayerId: null };
     ensureAtLeastOneLayer();
     saveState(true);
     populateActiveLayerSelect();
