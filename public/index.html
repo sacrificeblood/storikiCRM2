@@ -205,8 +205,16 @@
     word-break:break-all; line-height:1.5;
   }
   .link-full-details strong{color:var(--text); font-weight:700;}
-  .link-full-details a{color:#79d9ff;}
+  .link-full-details a{
+    color:#79d9ff; max-width:none; white-space:normal; overflow:visible; text-overflow:clip; display:inline;
+  }
   .link-expand-cb:checked ~ .link-full-details{display:block;}
+  .link-actions{display:flex; gap:6px; margin-top:6px;}
+  .link-action-btn{
+    padding:4px 9px; border-radius:5px; border:1px solid var(--border); background:var(--panel);
+    color:var(--text-dim); cursor:pointer; font-size:11px; font-weight:600;
+  }
+  .link-action-btn:hover{border-color:var(--green); color:var(--green);}
   .link-row .num{color:var(--text-dim); font-size:11px; width:14px; flex:none;}
   .link-cell a{
     color:#79d9ff; text-decoration:none; font-size:12.5px;
@@ -464,7 +472,12 @@
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
     const oldZoom = zoom;
-    const factor = e.deltaY < 0 ? 1.12 : 0.89;
+    // Scale the zoom step by how big the actual wheel/trackpad delta was, instead of a fixed
+    // per-event jump — Mac trackpads fire many small-delta events per gesture, so a flat step
+    // per event made zoom feel jumpy. This keeps trackpad pinch/scroll smooth while still giving
+    // a normal mouse wheel notch a sensible single step.
+    const dy = clamp(e.deltaY, -100, 100);
+    const factor = Math.exp(-dy * 0.0016);
     const newZoom = clamp(oldZoom*factor, ZOOM_MIN, ZOOM_MAX);
     panX = mouseX - (mouseX - panX) * (newZoom/oldZoom);
     panY = mouseY - (mouseY - panY) * (newZoom/oldZoom);
@@ -1408,8 +1421,40 @@
     fLayer.value = curLayer; fFan.value = curFan; fCre.value = curCre; fGeo.value = curGeo;
   }
 
+  function copyToClipboard(text){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(
+        ()=>showToast('Скопировано'),
+        ()=>fallbackCopy(text)
+      );
+    }else{
+      fallbackCopy(text);
+    }
+  }
+  function fallbackCopy(text){
+    try{
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast('Скопировано');
+    }catch(e){
+      showToast('Не удалось скопировать: ' + e.message);
+    }
+  }
+
   function setupTableDelegation(){
     tableWrap.addEventListener('click', (e)=>{
+      const copyBtn = e.target.closest('.link-copy-btn');
+      const copyNamingBtn = e.target.closest('.link-copy-naming-btn');
+      const openBtn = e.target.closest('.link-open-btn');
+      if(copyBtn){ copyToClipboard(copyBtn.dataset.url); return; }
+      if(copyNamingBtn){ copyToClipboard(copyNamingBtn.dataset.naming); return; }
+      if(openBtn){ window.open(openBtn.dataset.url, '_blank', 'noopener'); return; }
+
       const editBtn = e.target.closest('.edit-link');
       const delBtn = e.target.closest('.del-link');
       if(!editBtn && !delBtn) return;
@@ -1492,6 +1537,11 @@
               <div class="link-full-details">
                 ${u.naming ? `<div><strong>Нейминг:</strong> ${escapeHtml(u.naming)}</div>` : ''}
                 <div><strong>Ссылка:</strong> <a href="${escapeHtml(u.url)}" target="_blank" rel="noopener">${escapeHtml(u.url)}</a></div>
+                <div class="link-actions">
+                  <button type="button" class="link-action-btn link-copy-btn" data-url="${escapeHtml(u.url)}">📋 Копировать</button>
+                  <button type="button" class="link-action-btn link-open-btn" data-url="${escapeHtml(u.url)}">↗ Открыть</button>
+                  ${u.naming ? `<button type="button" class="link-action-btn link-copy-naming-btn" data-naming="${escapeHtml(u.naming)}">📋 Копировать нейминг</button>` : ''}
+                </div>
               </div>
             </div>`;
           }).join('')
