@@ -523,11 +523,6 @@
   function uid(){ return 'id' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
   function hashStr(s){ let h=0; for(let i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; } return Math.abs(h); }
   function escapeHtml(s){ const d=document.createElement('div'); d.textContent=String(s==null?'':s); return d.innerHTML; }
-  function buildFullLink(url, naming){
-    if(!naming) return url;
-    const sep = url.includes('?') ? '&' : '?';
-    return url + sep + naming;
-  }
   function shortLinkLabel(url){
     try{
       const u = new URL(url);
@@ -1474,7 +1469,7 @@
       const copyNamingBtn = e.target.closest('.link-copy-naming-btn');
       const openBtn = e.target.closest('.link-open-btn');
       if(copyBtn){ copyToClipboard(copyBtn.dataset.url); return; }
-      if(copyBadge){ copyToClipboard(copyBadge.dataset.url); return; }
+      if(copyBadge){ copyToClipboard(copyBadge.dataset.naming); return; }
       if(copyNamingBtn){ copyToClipboard(copyNamingBtn.dataset.naming); return; }
       if(openBtn){ window.open(openBtn.dataset.url, '_blank', 'noopener'); return; }
 
@@ -1551,24 +1546,21 @@
             const shortNaming = u.naming
               ? (u.naming.length > 24 ? escapeHtml(u.naming.slice(0,24)) + '…' : escapeHtml(u.naming))
               : ('Ссылка ' + (i+1));
-            const fullLink = buildFullLink(u.url, u.naming);
             return `<div class="link-entry">
               <input type="checkbox" class="link-expand-cb" id="${cbId}">
               <div class="link-row">
                 <span class="num">${i+1}.</span>
                 <label class="link-toggle-btn" for="${cbId}" title="Показать полностью">▸</label>
-                <button type="button" class="badge-layer link-naming-short link-copy-badge" data-url="${escapeHtml(fullLink)}" title="Клик — скопировать готовую ссылку с неймингом">${shortNaming}</button>
-                <button type="button" class="link-icon-btn link-open-btn" data-url="${escapeHtml(fullLink)}" title="Открыть готовую ссылку в новой вкладке">↗</button>
+                <button type="button" class="badge-layer link-naming-short link-copy-badge" data-naming="${escapeHtml(u.naming||'')}" title="Клик — скопировать нейминг">${shortNaming}</button>
+                <button type="button" class="link-icon-btn link-open-btn" data-url="${escapeHtml(u.url)}" title="Открыть ссылку в новой вкладке">↗</button>
               </div>
               <div class="link-full-details">
                 ${u.naming ? `<div><strong>Нейминг:</strong> ${escapeHtml(u.naming)}</div>` : ''}
-                <div><strong>Базовая ссылка:</strong> <a href="${escapeHtml(u.url)}" target="_blank" rel="noopener">${escapeHtml(u.url)}</a></div>
-                ${u.naming ? `<div><strong>Итоговая ссылка:</strong> <a href="${escapeHtml(fullLink)}" target="_blank" rel="noopener">${escapeHtml(fullLink)}</a></div>` : ''}
+                <div><strong>Ссылка:</strong> <a href="${escapeHtml(u.url)}" target="_blank" rel="noopener">${escapeHtml(u.url)}</a></div>
                 <div class="link-actions">
-                  <button type="button" class="link-action-btn link-copy-btn" data-url="${escapeHtml(fullLink)}">📋 Копировать итоговую</button>
-                  <button type="button" class="link-action-btn link-open-btn" data-url="${escapeHtml(fullLink)}">↗ Открыть итоговую</button>
-                  <button type="button" class="link-action-btn link-copy-btn" data-url="${escapeHtml(u.url)}">📋 Копировать базовую</button>
-                  ${u.naming ? `<button type="button" class="link-action-btn link-copy-naming-btn" data-naming="${escapeHtml(u.naming)}">📋 Копировать только нейминг</button>` : ''}
+                  ${u.naming ? `<button type="button" class="link-action-btn link-copy-naming-btn" data-naming="${escapeHtml(u.naming)}">📋 Копировать нейминг</button>` : ''}
+                  <button type="button" class="link-action-btn link-copy-btn" data-url="${escapeHtml(u.url)}">📋 Копировать ссылку</button>
+                  <button type="button" class="link-action-btn link-open-btn" data-url="${escapeHtml(u.url)}">↗ Открыть</button>
                 </div>
               </div>
             </div>`;
