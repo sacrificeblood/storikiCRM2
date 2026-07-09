@@ -654,6 +654,15 @@
     sub.textContent = (kind==='fan' ? 'Фанпейдж' : 'Креатив') + ' · связей: ' + linkCount;
     div.appendChild(sub);
 
+    if(kind === 'cre' && item.description){
+      const desc = document.createElement('div');
+      desc.className = 'sub';
+      desc.style.cssText = 'margin-top:4px; opacity:0.85; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;';
+      desc.textContent = '📝 ' + item.description;
+      desc.title = item.description;
+      div.appendChild(desc);
+    }
+
     const connector = document.createElement('div');
     connector.className='connector';
     div.appendChild(connector);
@@ -864,6 +873,19 @@
       modal.appendChild(urlField);
     }
 
+    let descInput = null;
+    if(kind === 'cre'){
+      const descField = document.createElement('div'); descField.className='field';
+      descField.innerHTML = `<label>Описание</label>`;
+      descInput = document.createElement('textarea');
+      descInput.rows = 3;
+      descInput.placeholder = 'Заметки по креативу, суть, для чего он...';
+      descInput.style.cssText = 'padding:9px 10px; border:1px solid var(--border); border-radius:6px; font-size:14px; background:var(--panel-2); color:var(--text); font-family:inherit; resize:vertical;';
+      descInput.value = item.description || '';
+      descField.appendChild(descInput);
+      modal.appendChild(descField);
+    }
+
     const actions = document.createElement('div'); actions.className='modal-actions';
     const delBtn = document.createElement('button');
     delBtn.className='btn btn-danger'; delBtn.textContent='Удалить'; delBtn.type='button';
@@ -881,6 +903,7 @@
       if(!nameInput.value.trim()){ showToast('Введите название'); return; }
       item.name = nameInput.value.trim();
       if(kind === 'fan'){ item.pageUrl = urlInput.value.trim(); }
+      if(kind === 'cre'){ item.description = descInput.value.trim(); }
       saveState(true);
       render();
       document.body.removeChild(overlay);
