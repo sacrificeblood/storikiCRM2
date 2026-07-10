@@ -20,6 +20,15 @@ async function initSchema(){
     );
   `);
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS board_state_history (
+      id SERIAL PRIMARY KEY,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      saved_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_history_key_time ON board_state_history (key, saved_at DESC);`);
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS activity_log (
       id SERIAL PRIMARY KEY,
       user_email TEXT NOT NULL,

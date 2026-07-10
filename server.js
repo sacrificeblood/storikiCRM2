@@ -48,10 +48,26 @@ app.get('/api/kv/:key', async (req, res) => {
   }
 });
 
+const HISTORY_LIMIT = 30;
+
 app.put('/api/kv/:key', async (req, res) => {
   try{
     const { value } = req.body || {};
     if(typeof value !== 'string') return res.status(400).json({ error: 'value must be a string' });
+
+    // archive whatever is currently stored before overwriting it — this is what makes
+    // "Восстановить из бэкапа" possible even if a save silently races a page refresh
+    const existing = await pool.query('SELECT value FROM board_state WHERE key=$1', [req.params.key]);
+    if(existing.rows.length && existing.rows[0].value !== value){
+      await pool.query('INSERT INTO board_state_history (key, value) VALUES ($1,$2)', [req.params.key, existing.rows[0].value]);
+      await pool.query(
+        `DELETE FROM board_state_history WHERE key=$1 AND id NOT IN (
+           SELECT id FROM board_state_history WHERE key=$1 ORDER BY saved_at DESC LIMIT $2
+         )`,
+        [req.params.key, HISTORY_LIMIT]
+      );
+    }
+
     await pool.query(
       `INSERT INTO board_state (key, value, updated_at) VALUES ($1,$2, now())
        ON CONFLICT (key) DO UPDATE SET value=$2, updated_at=now()`,
@@ -61,6 +77,58 @@ app.put('/api/kv/:key', async (req, res) => {
     res.json({ ok: true });
   }catch(e){
     console.error(e);
+    res.status(500).json({ error: 'DB error: ' + e.message });
+  }
+});
+
+// list recent backups for a key (lightweight — no value, just timestamps + size)
+app.get('/api/kv/:key/history', async (req, res) => {
+  try{
+    const result = await pool.query(
+      'SELECT id, saved_at, length(value) as size FROM board_state_history WHERE key=$1 ORDER BY saved_at DESC LIMIT $2',
+      [req.params.key, HISTORY_LIMIT]
+    );
+    res.json({ entries: result.rows });
+  }catch(e){
+    res.status(500).json({ error: 'DB error: ' + e.message });
+  }
+});
+
+// fetch the full value of one specific backup (for preview or manual recovery)
+app.get('/api/kv/:key/history/:historyId', async (req, res) => {
+  try{
+    const result = await pool.query(
+      'SELECT value, saved_at FROM board_state_history WHERE key=$1 AND id=$2',
+      [req.params.key, req.params.historyId]
+    );
+    if(!result.rows.length) return res.status(404).json({ error: 'not found' });
+    res.json({ value: result.rows[0].value, savedAt: result.rows[0].saved_at });
+  }catch(e){
+    res.status(500).json({ error: 'DB error: ' + e.message });
+  }
+});
+
+// restore a backup as the current value (archives the current value first, same as a normal save)
+app.post('/api/kv/:key/restore/:historyId', async (req, res) => {
+  try{
+    const snap = await pool.query(
+      'SELECT value FROM board_state_history WHERE key=$1 AND id=$2',
+      [req.params.key, req.params.historyId]
+    );
+    if(!snap.rows.length) return res.status(404).json({ error: 'backup not found' });
+
+    const existing = await pool.query('SELECT value FROM board_state WHERE key=$1', [req.params.key]);
+    if(existing.rows.length){
+      await pool.query('INSERT INTO board_state_history (key, value) VALUES ($1,$2)', [req.params.key, existing.rows[0].value]);
+    }
+    await pool.query(
+      `INSERT INTO board_state (key, value, updated_at) VALUES ($1,$2, now())
+       ON CONFLICT (key) DO UPDATE SET value=$2, updated_at=now()`,
+      [req.params.key, snap.rows[0].value]
+    );
+    logActivity('restored backup for ' + req.params.key);
+    res.json({ ok: true, value: snap.rows[0].value });
+  }catch(e){
     res.status(500).json({ error: 'DB error: ' + e.message });
   }
 });
