@@ -894,11 +894,12 @@
   document.addEventListener('mouseup', (e)=>{
     if(dragging){
       const moved = Math.abs(e.clientX - dragging.startClientX) > 5 || Math.abs(e.clientY - dragging.startClientY) > 5;
-      if(moved){
-        saveState();
-      }else{
+      if(!moved){
         openNodeEditor(dragging.id, dragging.kind);
       }
+      // note: pure repositioning is NOT saved by itself anymore — only actual creates/edits/
+      // deletes trigger a save. A dragged position still gets written the next time any real
+      // edit happens (the whole board state is serialized together), just not on every nudge.
       dragging = null;
     }
     if(connecting){
@@ -1167,6 +1168,48 @@
   function fmtBytes(n){
     if(n < 1024) return n + ' Б';
     return Math.round(n/1024) + ' КБ';
+  }
+
+  const BACKUPS_PASSWORD = '7897';
+  function askBackupsPassword(onSuccess){
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.maxWidth = '320px';
+    modal.innerHTML = `<h3>Бэкапы защищены паролем</h3>`;
+    const field = document.createElement('div'); field.className = 'field';
+    field.innerHTML = `<label>Пароль</label>`;
+    const input = document.createElement('input');
+    input.type = 'password';
+    input.placeholder = '••••';
+    field.appendChild(input);
+    modal.appendChild(field);
+
+    const actions = document.createElement('div'); actions.className = 'modal-actions';
+    const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
+    cancelBtn.addEventListener('click', ()=>document.body.removeChild(overlay));
+    actions.appendChild(cancelBtn);
+    const okBtn = document.createElement('button'); okBtn.className='btn btn-fan'; okBtn.textContent='Войти'; okBtn.type='button';
+    const trySubmit = ()=>{
+      if(input.value === BACKUPS_PASSWORD){
+        document.body.removeChild(overlay);
+        onSuccess();
+      }else{
+        showToast('Неверный пароль');
+        input.value = '';
+        input.focus();
+      }
+    };
+    okBtn.addEventListener('click', trySubmit);
+    input.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') trySubmit(); });
+    actions.appendChild(okBtn);
+    modal.appendChild(actions);
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+    input.focus();
   }
 
   async function openBackupsManager(){
@@ -1704,7 +1747,7 @@
   document.getElementById('addCreBtn').addEventListener('click', safe(()=>addNodePrompt('cre')));
   document.getElementById('manageLayersBtn').addEventListener('click', safe(openLayerManager));
   document.getElementById('trashBtn').addEventListener('click', safe(openTrashManager));
-  document.getElementById('backupsBtn').addEventListener('click', safe(openBackupsManager));
+  document.getElementById('backupsBtn').addEventListener('click', safe(()=>askBackupsPassword(openBackupsManager)));
   document.getElementById('resetBtn').addEventListener('click', ()=>{
     if(!confirm('Удалить ВСЕ данные доски (все слои, фанпейджи, креативы, связи)? Это необратимо.')) return;
     state = { layers: [], fanpages: [], creatives: [], links: [], deletedItems: [], currentLayerId: null };
