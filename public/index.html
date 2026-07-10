@@ -345,6 +345,8 @@
       <button class="btn btn-cre" id="addCreBtn">+ Нейминг креатива</button>
       <button class="btn btn-layer" id="manageLayersBtn">Слои</button>
       <button class="btn btn-ghost" id="trashBtn">История</button>
+      <button class="btn btn-ghost" id="backupsBtn">Бэкапы</button>
+      <span id="saveIndicator" style="font-size:11px; color:var(--text-dim); margin-left:4px; white-space:nowrap;">Сохранено ✓</span>
       <button class="btn btn-ghost" id="resetBtn">Очистить всё</button>
     </div>
   </header>
@@ -618,18 +620,37 @@
   }
 
   let saveTimer = null;
+  let pendingSaves = 0;
   function saveState(immediate){
     clearTimeout(saveTimer);
+    saveTimer = null;
     const doSave = async () => {
+      pendingSaves++;
+      updateSaveIndicator();
       try{
         const result = await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
         if(!result){ showToast('Не удалось сохранить данные'); }
       }catch(e){
         showToast('Ошибка сохранения: ' + (e.message||e));
+      }finally{
+        pendingSaves = Math.max(0, pendingSaves - 1);
+        updateSaveIndicator();
       }
     };
-    if(immediate){ doSave(); } else { saveTimer = setTimeout(doSave, 350); }
+    if(immediate){ doSave(); } else { saveTimer = setTimeout(()=>{ saveTimer = null; doSave(); }, 350); }
   }
+  function updateSaveIndicator(){
+    const el = document.getElementById('saveIndicator');
+    if(!el) return;
+    el.textContent = pendingSaves > 0 ? 'Сохранение…' : 'Сохранено ✓';
+    el.style.color = pendingSaves > 0 ? 'var(--amber)' : 'var(--text-dim)';
+  }
+  window.addEventListener('beforeunload', (e)=>{
+    if(pendingSaves > 0 || saveTimer){
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
 
   function activeFanpages(){ return state.fanpages.filter(f=>f.layerId===state.currentLayerId); }
   function activeCreatives(){ return state.creatives.filter(c=>c.layerId===state.currentLayerId); }
@@ -1143,6 +1164,69 @@
     return days + ' дн назад';
   }
 
+  function fmtBytes(n){
+    if(n < 1024) return n + ' Б';
+    return Math.round(n/1024) + ' КБ';
+  }
+
+  async function openBackupsManager(){
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `<h3>Бэкапы</h3><p class="muted" style="font-size:12.5px;margin-top:-8px;">Сервер автоматически сохраняет предыдущую версию перед каждым изменением (последние ${30}). Можно откатиться на любую из них.</p>`;
+
+    const list = document.createElement('div');
+    list.innerHTML = '<div class="muted" style="font-size:13px; padding:10px 0;">Загрузка…</div>';
+    modal.appendChild(list);
+
+    const actions = document.createElement('div'); actions.className='modal-actions';
+    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const closeBtn = document.createElement('button'); closeBtn.className='btn btn-plain'; closeBtn.textContent='Готово'; closeBtn.type='button';
+    closeBtn.addEventListener('click', ()=>document.body.removeChild(overlay));
+    actions.appendChild(closeBtn);
+    modal.appendChild(actions);
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+
+    try{
+      const res = await fetch('/api/kv/' + encodeURIComponent(STORAGE_KEY) + '/history', { credentials: 'include' });
+      const data = await res.json();
+      const entries = data.entries || [];
+      if(entries.length === 0){
+        list.innerHTML = '<div class="muted" style="font-size:13px; padding:10px 0;">Пока нет ни одного бэкапа — они появятся после первого изменения доски.</div>';
+        return;
+      }
+      list.innerHTML = '';
+      entries.forEach(entry => {
+        const row = document.createElement('div'); row.className='layer-row';
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1; font-size:13px;';
+        info.innerHTML = `${timeAgo(new Date(entry.saved_at).getTime())} <span class="muted" style="font-size:11px;">· ${fmtBytes(entry.size)} · ${new Date(entry.saved_at).toLocaleString('ru-RU')}</span>`;
+        row.appendChild(info);
+        const restoreBtn = document.createElement('button');
+        restoreBtn.textContent = '↺'; restoreBtn.title = 'Восстановить эту версию';
+        restoreBtn.style.cssText = 'width:28px; height:28px; border-radius:6px; border:1px solid var(--border); background:var(--panel-2); color:var(--green); cursor:pointer; font-size:15px;';
+        restoreBtn.addEventListener('click', safe(async ()=>{
+          if(!confirm('Откатить доску на состояние от ' + new Date(entry.saved_at).toLocaleString('ru-RU') + '? Текущая версия тоже сохранится в бэкапы перед откатом.')) return;
+          const r = await fetch('/api/kv/' + encodeURIComponent(STORAGE_KEY) + '/restore/' + entry.id, { method:'POST', credentials:'include' });
+          if(!r.ok){ showToast('Не удалось восстановить бэкап'); return; }
+          document.body.removeChild(overlay);
+          showToast('Восстановлено, перезагружаю доску…');
+          loadingBox.style.display = 'block';
+          loadingBox.textContent = 'Загрузка доски…';
+          location.reload();
+        }));
+        row.appendChild(restoreBtn);
+        list.appendChild(row);
+      });
+    }catch(e){
+      list.innerHTML = '<div class="muted" style="font-size:13px; padding:10px 0;">Не удалось загрузить список бэкапов: ' + escapeHtml(e.message) + '</div>';
+    }
+  }
+
   function openTrashManager(){
     const overlay = document.createElement('div');
     overlay.className = 'overlay';
@@ -1620,6 +1704,7 @@
   document.getElementById('addCreBtn').addEventListener('click', safe(()=>addNodePrompt('cre')));
   document.getElementById('manageLayersBtn').addEventListener('click', safe(openLayerManager));
   document.getElementById('trashBtn').addEventListener('click', safe(openTrashManager));
+  document.getElementById('backupsBtn').addEventListener('click', safe(openBackupsManager));
   document.getElementById('resetBtn').addEventListener('click', ()=>{
     if(!confirm('Удалить ВСЕ данные доски (все слои, фанпейджи, креативы, связи)? Это необратимо.')) return;
     state = { layers: [], fanpages: [], creatives: [], links: [], deletedItems: [], currentLayerId: null };
@@ -1663,6 +1748,7 @@
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
+        keepalive: true,
         body: JSON.stringify({ value })
       });
       if(!res.ok){ throw new Error('Storage error (' + res.status + ')'); }
