@@ -672,40 +672,34 @@
     return Array.from(map.values());
   }
 
-  async function mergeWithServerBeforeSave(){
-    try{
-      const res = await fetch('/api/kv/' + encodeURIComponent(STORAGE_KEY), { credentials: 'include' });
-      if(!res.ok) return; // first save ever, or server hiccup — just save local state as-is
-      const data = await res.json();
-      const remote = JSON.parse(data.value);
+  // Returns true if merging in remote data actually changed anything locally.
+  function applyRemoteMerge(remote){
+    const before = JSON.stringify({ f: state.fanpages, c: state.creatives, r: state.fanpageRegistry, l: state.links });
 
-      // merge trash first, so we know about deletions made by other people's tabs too
-      const localTrash = state.deletedItems || [];
-      const remoteTrash = remote.deletedItems || [];
-      const trashById = new Map();
-      remoteTrash.forEach(t => t && t.id && trashById.set(t.id, t));
-      localTrash.forEach(t => t && t.id && trashById.set(t.id, t));
-      let mergedTrash = Array.from(trashById.values()).sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0));
-      if(mergedTrash.length > MAX_TRASH) mergedTrash = mergedTrash.slice(0, MAX_TRASH);
-      state.deletedItems = mergedTrash;
+    const localTrash = state.deletedItems || [];
+    const remoteTrash = remote.deletedItems || [];
+    const trashById = new Map();
+    remoteTrash.forEach(t => t && t.id && trashById.set(t.id, t));
+    localTrash.forEach(t => t && t.id && trashById.set(t.id, t));
+    let mergedTrash = Array.from(trashById.values()).sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0));
+    if(mergedTrash.length > MAX_TRASH) mergedTrash = mergedTrash.slice(0, MAX_TRASH);
+    state.deletedItems = mergedTrash;
 
-      const deletedIds = new Set(mergedTrash.map(t => t.data && t.data.id).filter(Boolean));
+    const deletedIds = new Set(mergedTrash.map(t => t.data && t.data.id).filter(Boolean));
 
-      state.fanpages = mergeEntityArray(state.fanpages, remote.fanpages, deletedIds);
-      state.creatives = mergeEntityArray(state.creatives, remote.creatives, deletedIds);
-      state.fanpageRegistry = mergeEntityArray(state.fanpageRegistry, remote.fanpageRegistry, deletedIds);
-      state.links = mergeEntityArray(state.links, remote.links, deletedIds)
-        // a link only makes sense if both endpoints still exist after the merge above
-        .filter(l => state.fanpages.some(f=>f.id===l.fanpageId) && state.creatives.some(c=>c.id===l.creativeId));
+    state.fanpages = mergeEntityArray(state.fanpages, remote.fanpages, deletedIds);
+    state.creatives = mergeEntityArray(state.creatives, remote.creatives, deletedIds);
+    state.fanpageRegistry = mergeEntityArray(state.fanpageRegistry, remote.fanpageRegistry, deletedIds);
+    state.links = mergeEntityArray(state.links, remote.links, deletedIds)
+      .filter(l => state.fanpages.some(f=>f.id===l.fanpageId) && state.creatives.some(c=>c.id===l.creativeId));
 
-      // adopt any layers we didn't know about (kept for backward-compat data only, layers UI is gone)
-      if(Array.isArray(remote.layers)){
-        const layerIds = new Set((state.layers||[]).map(l=>l.id));
-        remote.layers.forEach(l => { if(l && l.id && !layerIds.has(l.id)) state.layers.push(l); });
-      }
-    }catch(e){
-      console.error('merge before save failed, saving local state as-is:', e);
+    if(Array.isArray(remote.layers)){
+      const layerIds = new Set((state.layers||[]).map(l=>l.id));
+      remote.layers.forEach(l => { if(l && l.id && !layerIds.has(l.id)) state.layers.push(l); });
     }
+
+    const after = JSON.stringify({ f: state.fanpages, c: state.creatives, r: state.fanpageRegistry, l: state.links });
+    return before !== after;
   }
 
   let saveTimer = null;
@@ -717,10 +711,10 @@
       pendingSaves++;
       updateSaveIndicator();
       try{
-        await mergeWithServerBeforeSave();
+        // Save FIRST, immediately, with nothing in front of it — this is the request that must
+        // survive a page refresh, so it can't be delayed behind any other network round trip.
         const result = await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
         if(!result){ showToast('Не удалось сохранить данные'); }
-        render();
       }catch(e){
         showToast('Ошибка сохранения: ' + (e.message||e));
       }finally{
@@ -730,6 +724,34 @@
     };
     if(immediate){ doSave(); } else { saveTimer = setTimeout(()=>{ saveTimer = null; doSave(); }, 350); }
   }
+
+  // Background reconciliation with whatever other open tabs/people have saved — runs on its own
+  // schedule (not tied to the moment of editing), so it never stands between "I made an edit" and
+  // "that edit is safely on the server". If it discovers something new, it adopts it and re-saves.
+  let syncing = false;
+  async function backgroundSync(){
+    if(syncing || pendingSaves > 0) return;
+    syncing = true;
+    try{
+      const res = await fetch('/api/kv/' + encodeURIComponent(STORAGE_KEY), { credentials: 'include' });
+      if(res.ok){
+        const data = await res.json();
+        const remote = JSON.parse(data.value);
+        const changed = applyRemoteMerge(remote);
+        if(changed){
+          await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
+          render();
+        }
+      }
+    }catch(e){
+      console.error('background sync failed:', e);
+    }finally{
+      syncing = false;
+    }
+  }
+  setInterval(backgroundSync, 8000);
+  document.addEventListener('visibilitychange', () => { if(!document.hidden) backgroundSync(); });
+
   function updateSaveIndicator(){
     const el = document.getElementById('saveIndicator');
     if(!el) return;
