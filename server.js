@@ -25,30 +25,8 @@ async function logActivity(action){
   catch(e){ console.error('activity log failed', e.message); }
 }
 
-// ---------- KEY/VALUE BOARD STORAGE (open — no login required) ----------
-app.get('/api/kv', async (req, res) => {
-  try{
-    const prefix = req.query.prefix || '';
-    const result = await pool.query('SELECT key FROM board_state WHERE key LIKE $1', [prefix + '%']);
-    res.json({ keys: result.rows.map(r => r.key) });
-  }catch(e){
-    console.error(e);
-    res.status(500).json({ error: 'DB error: ' + e.message });
-  }
-});
-
-app.get('/api/kv/:key', async (req, res) => {
-  try{
-    const result = await pool.query('SELECT value FROM board_state WHERE key=$1', [req.params.key]);
-    if(!result.rows.length) return res.status(404).json({ error: 'not found' });
-    res.json({ value: result.rows[0].value });
-  }catch(e){
-    console.error(e);
-    res.status(500).json({ error: 'DB error: ' + e.message });
-  }
-});
-
 const HISTORY_LIMIT = 30;
+const HISTORY_MIN_GAP_MS = 2 * 60 * 1000; // don't snapshot more than once per 2 minutes per key
 
 app.put('/api/kv/:key', async (req, res) => {
   try{
@@ -56,16 +34,25 @@ app.put('/api/kv/:key', async (req, res) => {
     if(typeof value !== 'string') return res.status(400).json({ error: 'value must be a string' });
 
     // archive whatever is currently stored before overwriting it — this is what makes
-    // "Восстановить из бэкапа" possible even if a save silently races a page refresh
+    // "Восстановить из бэкапа" possible even if a save silently races a page refresh.
+    // Throttled: frequent small edits (dragging a card, etc.) within the same short window
+    // collapse into a single checkpoint instead of eating up all the history slots.
     const existing = await pool.query('SELECT value FROM board_state WHERE key=$1', [req.params.key]);
     if(existing.rows.length && existing.rows[0].value !== value){
-      await pool.query('INSERT INTO board_state_history (key, value) VALUES ($1,$2)', [req.params.key, existing.rows[0].value]);
-      await pool.query(
-        `DELETE FROM board_state_history WHERE key=$1 AND id NOT IN (
-           SELECT id FROM board_state_history WHERE key=$1 ORDER BY saved_at DESC LIMIT $2
-         )`,
-        [req.params.key, HISTORY_LIMIT]
+      const lastSnap = await pool.query(
+        'SELECT saved_at FROM board_state_history WHERE key=$1 ORDER BY saved_at DESC LIMIT 1',
+        [req.params.key]
       );
+      const lastSnapAge = lastSnap.rows.length ? Date.now() - new Date(lastSnap.rows[0].saved_at).getTime() : Infinity;
+      if(lastSnapAge > HISTORY_MIN_GAP_MS){
+        await pool.query('INSERT INTO board_state_history (key, value) VALUES ($1,$2)', [req.params.key, existing.rows[0].value]);
+        await pool.query(
+          `DELETE FROM board_state_history WHERE key=$1 AND id NOT IN (
+             SELECT id FROM board_state_history WHERE key=$1 ORDER BY saved_at DESC LIMIT $2
+           )`,
+          [req.params.key, HISTORY_LIMIT]
+        );
+      }
     }
 
     await pool.query(
@@ -138,6 +125,28 @@ app.delete('/api/kv/:key', async (req, res) => {
     await pool.query('DELETE FROM board_state WHERE key=$1', [req.params.key]);
     logActivity('deleted ' + req.params.key);
     res.json({ ok: true });
+  }catch(e){
+    console.error(e);
+    res.status(500).json({ error: 'DB error: ' + e.message });
+  }
+});
+
+app.get('/api/kv', async (req, res) => {
+  try{
+    const prefix = req.query.prefix || '';
+    const result = await pool.query('SELECT key FROM board_state WHERE key LIKE $1', [prefix + '%']);
+    res.json({ keys: result.rows.map(r => r.key) });
+  }catch(e){
+    console.error(e);
+    res.status(500).json({ error: 'DB error: ' + e.message });
+  }
+});
+
+app.get('/api/kv/:key', async (req, res) => {
+  try{
+    const result = await pool.query('SELECT value FROM board_state WHERE key=$1', [req.params.key]);
+    if(!result.rows.length) return res.status(404).json({ error: 'not found' });
+    res.json({ value: result.rows[0].value });
   }catch(e){
     console.error(e);
     res.status(500).json({ error: 'DB error: ' + e.message });
