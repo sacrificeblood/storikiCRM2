@@ -420,6 +420,7 @@
           </select>
         </div>
         <button class="btn btn-fan" id="addFanFromListBtn" style="align-self:end;">+ Добавить фанпейдж</button>
+        <button class="btn btn-cre" id="bulkAddFanBtn" style="align-self:end;">+ Добавить списком</button>
         <button class="btn btn-ghost" id="clearFpFiltersBtn" style="align-self:end;">Сбросить фильтры</button>
         <div class="result-count" id="fpResultCount"></div>
       </div>
@@ -650,6 +651,48 @@
     saveState(true);
   }
 
+  function mergeEntityArray(localArr, remoteArr, deletedIds){
+    const map = new Map();
+    (remoteArr||[]).forEach(item => { if(item && item.id && !deletedIds.has(item.id)) map.set(item.id, item); });
+    (localArr||[]).forEach(item => { if(item && item.id && !deletedIds.has(item.id)) map.set(item.id, item); });
+    return Array.from(map.values());
+  }
+
+  async function mergeWithServerBeforeSave(){
+    try{
+      const res = await fetch('/api/kv/' + encodeURIComponent(STORAGE_KEY), { credentials: 'include' });
+      if(!res.ok) return; // first save ever, or server hiccup — just save local state as-is
+      const data = await res.json();
+      const remote = JSON.parse(data.value);
+
+      // merge trash first, so we know about deletions made by other people's tabs too
+      const localTrash = state.deletedItems || [];
+      const remoteTrash = remote.deletedItems || [];
+      const trashById = new Map();
+      remoteTrash.forEach(t => t && t.id && trashById.set(t.id, t));
+      localTrash.forEach(t => t && t.id && trashById.set(t.id, t));
+      let mergedTrash = Array.from(trashById.values()).sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0));
+      if(mergedTrash.length > MAX_TRASH) mergedTrash = mergedTrash.slice(0, MAX_TRASH);
+      state.deletedItems = mergedTrash;
+
+      const deletedIds = new Set(mergedTrash.map(t => t.data && t.data.id).filter(Boolean));
+
+      state.fanpages = mergeEntityArray(state.fanpages, remote.fanpages, deletedIds);
+      state.creatives = mergeEntityArray(state.creatives, remote.creatives, deletedIds);
+      state.links = mergeEntityArray(state.links, remote.links, deletedIds)
+        // a link only makes sense if both endpoints still exist after the merge above
+        .filter(l => state.fanpages.some(f=>f.id===l.fanpageId) && state.creatives.some(c=>c.id===l.creativeId));
+
+      // adopt any layers we didn't know about (kept for backward-compat data only, layers UI is gone)
+      if(Array.isArray(remote.layers)){
+        const layerIds = new Set((state.layers||[]).map(l=>l.id));
+        remote.layers.forEach(l => { if(l && l.id && !layerIds.has(l.id)) state.layers.push(l); });
+      }
+    }catch(e){
+      console.error('merge before save failed, saving local state as-is:', e);
+    }
+  }
+
   let saveTimer = null;
   let pendingSaves = 0;
   function saveState(immediate){
@@ -659,8 +702,10 @@
       pendingSaves++;
       updateSaveIndicator();
       try{
+        await mergeWithServerBeforeSave();
         const result = await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
         if(!result){ showToast('Не удалось сохранить данные'); }
+        render();
       }catch(e){
         showToast('Ошибка сохранения: ' + (e.message||e));
       }finally{
@@ -1116,6 +1161,48 @@
     nameInput.focus();
   }
 
+  function openBulkAddFanpages(){
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `<h3>Добавить фанпейджи списком</h3><p class="muted" style="font-size:12.5px;margin-top:-8px;">По одному названию на строку. Можно вставить сразу хоть сотню.</p>`;
+
+    const field = document.createElement('div'); field.className = 'field';
+    field.innerHTML = `<label>Названия (каждое с новой строки)</label>`;
+    const textarea = document.createElement('textarea');
+    textarea.rows = 10;
+    textarea.placeholder = 'Например:\nАккаунт 1\nАккаунт 2\nАккаунт 3\n...';
+    textarea.style.cssText = 'padding:9px 10px; border:1px solid var(--border); border-radius:6px; font-size:14px; background:var(--panel-2); color:var(--text); font-family:inherit; resize:vertical;';
+    field.appendChild(textarea);
+    modal.appendChild(field);
+
+    const actions = document.createElement('div'); actions.className = 'modal-actions';
+    const spacer = document.createElement('div'); spacer.className = 'spacer'; actions.appendChild(spacer);
+    const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
+    cancelBtn.addEventListener('click', safe(()=>document.body.removeChild(overlay)));
+    actions.appendChild(cancelBtn);
+    const addBtn = document.createElement('button'); addBtn.className='btn btn-fan'; addBtn.textContent='Добавить все'; addBtn.type='button';
+    addBtn.addEventListener('click', safe(()=>{
+      const names = textarea.value.split('\n').map(s=>s.trim()).filter(Boolean);
+      if(names.length === 0){ showToast('Список пуст'); return; }
+      names.forEach(name => {
+        state.fanpages.push({ id: uid(), name, layerId: state.currentLayerId, status: 'inactive' });
+      });
+      saveState(true);
+      render();
+      document.body.removeChild(overlay);
+      showToast(`Добавлено фанпейджей: ${names.length}`);
+    }));
+    actions.appendChild(addBtn);
+    modal.appendChild(actions);
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+    textarea.focus();
+  }
+
   function addNodePrompt(kind, pos){
     const label = kind==='fan' ? 'Название фанпейджа' : 'Нейминг креатива';
     showSimpleModal({
@@ -1124,6 +1211,7 @@
       onSubmit: (val) => {
         const arr = kind==='fan' ? state.fanpages : state.creatives;
         const item = { id: uid(), name: val.trim(), layerId: state.currentLayerId };
+        if(kind === 'fan'){ item.status = 'inactive'; }
         if(pos){
           item.x = Math.round(pos.x - 95);
           item.y = Math.round(pos.y - 37);
@@ -1608,11 +1696,32 @@
 
   function setupFanpageTableDelegation(){
     const wrap = document.getElementById('fanpageTableWrap');
-    wrap.addEventListener('click', (e)=>{
+    wrap.addEventListener('click', safe((e)=>{
       const copyBtn = e.target.closest('.link-copy-btn');
       const openBtn = e.target.closest('.link-open-btn');
       if(copyBtn){ copyToClipboard(copyBtn.dataset.url); return; }
       if(openBtn){ window.open(openBtn.dataset.url, '_blank', 'noopener'); return; }
+
+      const statusToggle = e.target.closest('.status-toggle');
+      const genderToggle = e.target.closest('.gender-toggle');
+      if(statusToggle){
+        const fp = state.fanpages.find(f=>f.id===statusToggle.dataset.fanId);
+        if(fp){
+          fp.status = fp.status === 'inactive' ? 'active' : 'inactive';
+          saveState(true);
+          render();
+        }
+        return;
+      }
+      if(genderToggle){
+        const fp = state.fanpages.find(f=>f.id===genderToggle.dataset.fanId);
+        if(fp){
+          fp.gender = fp.gender === 'M' ? 'F' : (fp.gender === 'F' ? '' : 'M');
+          saveState(true);
+          render();
+        }
+        return;
+      }
 
       const editBtn = e.target.closest('.edit-fan');
       const delBtn = e.target.closest('.del-fan');
@@ -1622,7 +1731,7 @@
       const id = tr.dataset.fanId;
       if(editBtn){ openNodeEditor(id, 'fan'); }
       else if(delBtn){ deleteNode(id, 'fan'); }
-    });
+    }));
   }
 
   function populateFanpageFilterOptions(){
@@ -1666,13 +1775,10 @@
     rows.forEach(f => {
       const isInactive = f.status === 'inactive';
       const statusHtml = isInactive
-        ? `<span class="badge-layer" style="border-color:var(--danger); color:var(--danger); background:rgba(224,80,127,0.12);">Не используется</span>`
-        : `<span class="badge-fan">Используется</span>`;
-      const genderHtml = f.gender === 'M'
-        ? `<span class="badge-cre">М</span>`
-        : f.gender === 'F'
-          ? `<span class="badge-layer">Ж</span>`
-          : '<span class="muted">—</span>';
+        ? `<button type="button" class="badge-layer status-toggle" data-fan-id="${f.id}" title="Клик — переключить на «Используется»" style="border-color:var(--danger); color:var(--danger); background:rgba(224,80,127,0.12); cursor:pointer; font-family:inherit;">Не используется</button>`
+        : `<button type="button" class="badge-fan status-toggle" data-fan-id="${f.id}" title="Клик — переключить на «Не используется»" style="cursor:pointer; font-family:inherit; border:none;">Используется</button>`;
+      const genderLabel = f.gender === 'M' ? 'М' : f.gender === 'F' ? 'Ж' : '— (клик)';
+      const genderHtml = `<button type="button" class="badge-cre gender-toggle" data-fan-id="${f.id}" title="Клик — сменить пол (М → Ж → не указано)" style="cursor:pointer; font-family:inherit; border:none;">${genderLabel}</button>`;
       const linkHtml = f.pageUrl
         ? `<a href="${escapeHtml(f.pageUrl)}" target="_blank" rel="noopener" title="${escapeHtml(f.pageUrl)}">${escapeHtml(shortLinkLabel(f.pageUrl))}</a>
            <button type="button" class="link-icon-btn link-copy-btn" data-url="${escapeHtml(f.pageUrl)}" title="Копировать">📋</button>
@@ -1853,6 +1959,7 @@
     renderFanpageTable();
   });
   document.getElementById('addFanFromListBtn').addEventListener('click', safe(()=>addNodePrompt('fan')));
+  document.getElementById('bulkAddFanBtn').addEventListener('click', safe(openBulkAddFanpages));
 
   window.__startBoard = loadState;
 })();
