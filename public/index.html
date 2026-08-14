@@ -443,7 +443,7 @@
       return { naming: u.naming || '', url: u.url || '' };
     }).filter(u=>u.url).slice(0, MAX_URLS);
   }
-  let state = { layers: [], fanpages: [], creatives: [], links: [], deletedItems: [], currentLayerId: null };
+  let state = { layers: [], fanpages: [], creatives: [], links: [], fanpageRegistry: [], deletedItems: [], currentLayerId: null };
   const VIEW_STATE_KEY = 'adboard-view-state';
   function loadViewState(){
     try{
@@ -599,6 +599,20 @@
         });
         state.currentLayerId = parsed.currentLayerId || null;
         state.deletedItems = parsed.deletedItems || [];
+
+        if(Array.isArray(parsed.fanpageRegistry)){
+          state.fanpageRegistry = parsed.fanpageRegistry;
+        }else{
+          // one-time migration: board fanpages used to carry geo/gender/status/pageUrl —
+          // move whatever was already filled in into the new, independent registry
+          state.fanpageRegistry = state.fanpages
+            .filter(f => f.geo || f.gender || (f.status && f.status !== 'inactive') || f.pageUrl)
+            .map(f => ({
+              id: uid(), name: f.name, geo: f.geo || '', gender: f.gender || '',
+              status: f.status || 'inactive', pageUrl: f.pageUrl || '', createdAt: Date.now()
+            }));
+          state.fanpages.forEach(f=>{ delete f.geo; delete f.gender; delete f.status; delete f.pageUrl; });
+        }
       } else {
         // try migrating legacy single-layer data (pre-layers version)
         try{
@@ -679,6 +693,7 @@
 
       state.fanpages = mergeEntityArray(state.fanpages, remote.fanpages, deletedIds);
       state.creatives = mergeEntityArray(state.creatives, remote.creatives, deletedIds);
+      state.fanpageRegistry = mergeEntityArray(state.fanpageRegistry, remote.fanpageRegistry, deletedIds);
       state.links = mergeEntityArray(state.links, remote.links, deletedIds)
         // a link only makes sense if both endpoints still exist after the merge above
         .filter(l => state.fanpages.some(f=>f.id===l.fanpageId) && state.creatives.some(c=>c.id===l.creativeId));
@@ -798,24 +813,9 @@
     const name = document.createElement('div'); name.className='name'; name.textContent = item.name;
     div.appendChild(name);
 
-    if(kind === 'fan' && item.pageUrl){
-      const linkIcon = document.createElement('a');
-      linkIcon.href = item.pageUrl;
-      linkIcon.target = '_blank';
-      linkIcon.rel = 'noopener';
-      linkIcon.textContent = '🔗';
-      linkIcon.title = item.pageUrl;
-      linkIcon.style.cssText = 'position:absolute; top:8px; right:52px; font-size:12px; text-decoration:none; cursor:pointer;';
-      linkIcon.addEventListener('mousedown', (e)=>e.stopPropagation());
-      linkIcon.addEventListener('click', (e)=>e.stopPropagation());
-      div.appendChild(linkIcon);
-    }
-
     const linkCount = activeLinks().filter(l => kind==='fan' ? l.fanpageId===item.id : l.creativeId===item.id).length;
     const sub = document.createElement('div'); sub.className='sub';
-    sub.textContent = (kind==='fan' ? 'Фанпейдж' : 'Креатив') + ' · связей: ' + linkCount
-      + (kind==='fan' && item.gender ? ' · ' + (item.gender==='M' ? 'М' : 'Ж') : '')
-      + (kind==='fan' && item.status==='inactive' ? ' · не используется' : '');
+    sub.textContent = (kind==='fan' ? 'Фанпейдж' : 'Креатив') + ' · связей: ' + linkCount;
     div.appendChild(sub);
 
     if(kind === 'cre' && item.description){
@@ -1042,6 +1042,8 @@
         entry.data.layerId = state.currentLayerId;
       }
       (entry.type==='fan' ? state.fanpages : state.creatives).push(entry.data);
+    }else if(entry.type === 'freg'){
+      state.fanpageRegistry.push(entry.data);
     }
     state.deletedItems = state.deletedItems.filter(t=>t.id!==trashId);
     saveState(true);
@@ -1067,51 +1069,6 @@
     nameInput.value = item.name;
     nameField.appendChild(nameInput);
     modal.appendChild(nameField);
-
-    let urlInput = null;
-    let geoInput = null;
-    let statusSelect = null;
-    let genderSelect = null;
-    if(kind === 'fan'){
-      const geoField = document.createElement('div'); geoField.className='field';
-      geoField.innerHTML = `<label>Гео (где находится аккаунт)</label>`;
-      geoInput = document.createElement('input');
-      geoInput.placeholder = 'например, US, DE, PL';
-      geoInput.value = item.geo || '';
-      geoField.appendChild(geoInput);
-      modal.appendChild(geoField);
-
-      const genderField = document.createElement('div'); genderField.className='field';
-      genderField.innerHTML = `<label>Пол аккаунта</label>`;
-      genderSelect = document.createElement('select');
-      genderSelect.innerHTML = `
-        <option value="">Не указано</option>
-        <option value="M">Мужчина (М)</option>
-        <option value="F">Женщина (Ж)</option>
-      `;
-      genderSelect.value = item.gender || '';
-      genderField.appendChild(genderSelect);
-      modal.appendChild(genderField);
-
-      const statusField = document.createElement('div'); statusField.className='field';
-      statusField.innerHTML = `<label>Статус</label>`;
-      statusSelect = document.createElement('select');
-      statusSelect.innerHTML = `
-        <option value="active">Используется</option>
-        <option value="inactive">Не используется</option>
-      `;
-      statusSelect.value = item.status === 'inactive' ? 'inactive' : 'active';
-      statusField.appendChild(statusSelect);
-      modal.appendChild(statusField);
-
-      const urlField = document.createElement('div'); urlField.className='field';
-      urlField.innerHTML = `<label>Ссылка на фанпейдж</label>`;
-      urlInput = document.createElement('input');
-      urlInput.placeholder = 'https://facebook.com/...';
-      urlInput.value = item.pageUrl || '';
-      urlField.appendChild(urlInput);
-      modal.appendChild(urlField);
-    }
 
     let descInput = null;
     if(kind === 'cre'){
@@ -1142,12 +1099,6 @@
     saveBtn.addEventListener('click', safe(()=>{
       if(!nameInput.value.trim()){ showToast('Введите название'); return; }
       item.name = nameInput.value.trim();
-      if(kind === 'fan'){
-        item.pageUrl = urlInput.value.trim();
-        item.geo = geoInput.value.trim();
-        item.status = statusSelect.value;
-        item.gender = genderSelect.value;
-      }
       if(kind === 'cre'){ item.description = descInput.value.trim(); }
       saveState(true);
       render();
@@ -1159,6 +1110,19 @@
     document.body.appendChild(overlay);
     overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
     nameInput.focus();
+  }
+
+  function addRegistryPrompt(){
+    showSimpleModal({
+      title: 'Новый фанпейдж (реестр)',
+      label: 'Название фанпейджа',
+      placeholder: 'Введите название',
+      onSubmit: (val) => {
+        state.fanpageRegistry.push({ id: uid(), name: val.trim(), status: 'inactive', geo:'', gender:'', pageUrl:'', createdAt: Date.now() });
+        saveState(true);
+        render();
+      }
+    });
   }
 
   function openBulkAddFanpages(){
@@ -1187,7 +1151,7 @@
       const names = textarea.value.split('\n').map(s=>s.trim()).filter(Boolean);
       if(names.length === 0){ showToast('Список пуст'); return; }
       names.forEach(name => {
-        state.fanpages.push({ id: uid(), name, layerId: state.currentLayerId, status: 'inactive' });
+        state.fanpageRegistry.push({ id: uid(), name, status: 'inactive', geo:'', gender:'', pageUrl:'', createdAt: Date.now() });
       });
       saveState(true);
       render();
@@ -1211,7 +1175,6 @@
       onSubmit: (val) => {
         const arr = kind==='fan' ? state.fanpages : state.creatives;
         const item = { id: uid(), name: val.trim(), layerId: state.currentLayerId };
-        if(kind === 'fan'){ item.status = 'inactive'; }
         if(pos){
           item.x = Math.round(pos.x - 95);
           item.y = Math.round(pos.y - 37);
@@ -1445,7 +1408,7 @@
       }
       items.forEach(entry => {
         const row = document.createElement('div'); row.className='layer-row';
-        const typeLabel = entry.type === 'fan' ? 'Фанпейдж' : entry.type === 'cre' ? 'Креатив' : 'Связь';
+        const typeLabel = entry.type === 'fan' ? 'Фанпейдж (доска)' : entry.type === 'cre' ? 'Креатив' : entry.type === 'freg' ? 'Фанпейдж (реестр)' : 'Связь';
         const info = document.createElement('div');
         info.style.cssText = 'flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
         info.innerHTML = `<span class="muted" style="font-size:11px;">${typeLabel} · ${timeAgo(entry.deletedAt)}</span><br>${escapeHtml(entry.label||'—')}`;
@@ -1694,6 +1657,104 @@
     });
   }
 
+  function deleteRegistryEntry(id){
+    const item = state.fanpageRegistry.find(f=>f.id===id);
+    if(!item) return;
+    if(!confirm(`Удалить запись "${item.name}" из реестра фанпейджей? На доску это не повлияет.`)) return;
+    pushToTrash('freg', item, item.name);
+    state.fanpageRegistry = state.fanpageRegistry.filter(f=>f.id!==id);
+    saveState(true);
+    render();
+  }
+
+  function openRegistryEditor(id){
+    const item = state.fanpageRegistry.find(f=>f.id===id);
+    if(!item) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `<h3>Фанпейдж (реестр)</h3>`;
+
+    const nameField = document.createElement('div'); nameField.className='field';
+    nameField.innerHTML = `<label>Название</label>`;
+    const nameInput = document.createElement('input');
+    nameInput.value = item.name;
+    nameField.appendChild(nameInput);
+    modal.appendChild(nameField);
+
+    const geoField = document.createElement('div'); geoField.className='field';
+    geoField.innerHTML = `<label>Гео (где находится аккаунт)</label>`;
+    const geoInput = document.createElement('input');
+    geoInput.placeholder = 'например, US, DE, PL';
+    geoInput.value = item.geo || '';
+    geoField.appendChild(geoInput);
+    modal.appendChild(geoField);
+
+    const genderField = document.createElement('div'); genderField.className='field';
+    genderField.innerHTML = `<label>Пол аккаунта</label>`;
+    const genderSelect = document.createElement('select');
+    genderSelect.innerHTML = `
+      <option value="">Не указано</option>
+      <option value="M">Мужчина (М)</option>
+      <option value="F">Женщина (Ж)</option>
+    `;
+    genderSelect.value = item.gender || '';
+    genderField.appendChild(genderSelect);
+    modal.appendChild(genderField);
+
+    const statusField = document.createElement('div'); statusField.className='field';
+    statusField.innerHTML = `<label>Статус</label>`;
+    const statusSelect = document.createElement('select');
+    statusSelect.innerHTML = `
+      <option value="active">Используется</option>
+      <option value="inactive">Не используется</option>
+    `;
+    statusSelect.value = item.status === 'active' ? 'active' : 'inactive';
+    statusField.appendChild(statusSelect);
+    modal.appendChild(statusField);
+
+    const urlField = document.createElement('div'); urlField.className='field';
+    urlField.innerHTML = `<label>Ссылка на фанпейдж</label>`;
+    const urlInput = document.createElement('input');
+    urlInput.placeholder = 'https://facebook.com/...';
+    urlInput.value = item.pageUrl || '';
+    urlField.appendChild(urlInput);
+    modal.appendChild(urlField);
+
+    const actions = document.createElement('div'); actions.className='modal-actions';
+    const delBtn = document.createElement('button');
+    delBtn.className='btn btn-danger'; delBtn.textContent='Удалить'; delBtn.type='button';
+    delBtn.addEventListener('click', safe(()=>{
+      document.body.removeChild(overlay);
+      deleteRegistryEntry(id);
+    }));
+    actions.appendChild(delBtn);
+    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
+    cancelBtn.addEventListener('click', safe(()=>document.body.removeChild(overlay)));
+    actions.appendChild(cancelBtn);
+    const saveBtn = document.createElement('button'); saveBtn.className='btn btn-fan'; saveBtn.textContent='Сохранить'; saveBtn.type='button';
+    saveBtn.addEventListener('click', safe(()=>{
+      if(!nameInput.value.trim()){ showToast('Введите название'); return; }
+      item.name = nameInput.value.trim();
+      item.geo = geoInput.value.trim();
+      item.gender = genderSelect.value;
+      item.status = statusSelect.value;
+      item.pageUrl = urlInput.value.trim();
+      saveState(true);
+      render();
+      document.body.removeChild(overlay);
+    }));
+    actions.appendChild(saveBtn);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+    nameInput.focus();
+  }
+
   function setupFanpageTableDelegation(){
     const wrap = document.getElementById('fanpageTableWrap');
     wrap.addEventListener('click', safe((e)=>{
@@ -1705,16 +1766,16 @@
       const statusToggle = e.target.closest('.status-toggle');
       const genderToggle = e.target.closest('.gender-toggle');
       if(statusToggle){
-        const fp = state.fanpages.find(f=>f.id===statusToggle.dataset.fanId);
+        const fp = state.fanpageRegistry.find(f=>f.id===statusToggle.dataset.fanId);
         if(fp){
-          fp.status = fp.status === 'inactive' ? 'active' : 'inactive';
+          fp.status = fp.status === 'active' ? 'inactive' : 'active';
           saveState(true);
           render();
         }
         return;
       }
       if(genderToggle){
-        const fp = state.fanpages.find(f=>f.id===genderToggle.dataset.fanId);
+        const fp = state.fanpageRegistry.find(f=>f.id===genderToggle.dataset.fanId);
         if(fp){
           fp.gender = fp.gender === 'M' ? 'F' : (fp.gender === 'F' ? '' : 'M');
           saveState(true);
@@ -1729,15 +1790,15 @@
       const tr = e.target.closest('tr');
       if(!tr) return;
       const id = tr.dataset.fanId;
-      if(editBtn){ openNodeEditor(id, 'fan'); }
-      else if(delBtn){ deleteNode(id, 'fan'); }
+      if(editBtn){ openRegistryEditor(id); }
+      else if(delBtn){ deleteRegistryEntry(id); }
     }));
   }
 
   function populateFanpageFilterOptions(){
     const geoSelect = document.getElementById('fpGeo');
     const cur = geoSelect.value;
-    const geos = Array.from(new Set(state.fanpages.map(f=>f.geo).filter(Boolean))).sort();
+    const geos = Array.from(new Set(state.fanpageRegistry.map(f=>f.geo).filter(Boolean))).sort();
     geoSelect.innerHTML = '<option value="">Все</option>' +
       geos.map(g=>`<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
     geoSelect.value = cur;
@@ -1750,9 +1811,9 @@
     const statusFilter = document.getElementById('fpStatus').value;
     const genderFilter = document.getElementById('fpGender').value;
 
-    let rows = state.fanpages.slice();
+    let rows = state.fanpageRegistry.slice();
     if(geoFilter) rows = rows.filter(f => f.geo === geoFilter);
-    if(statusFilter) rows = rows.filter(f => (f.status === 'inactive' ? 'inactive' : 'active') === statusFilter);
+    if(statusFilter) rows = rows.filter(f => (f.status === 'active' ? 'active' : 'inactive') === statusFilter);
     if(genderFilter) rows = rows.filter(f => f.gender === genderFilter);
     if(search){
       rows = rows.filter(f =>
@@ -1767,14 +1828,14 @@
     const wrap = document.getElementById('fanpageTableWrap');
 
     if(rows.length === 0){
-      wrap.innerHTML = '<div class="empty-state">Фанпейджей не найдено. Добавьте новый кнопкой выше.</div>';
+      wrap.innerHTML = '<div class="empty-state">Записей не найдено. Добавьте новую кнопкой выше — это отдельный реестр, не связанный с карточками на доске.</div>';
       return;
     }
 
     let html = '<table><thead><tr><th>Название</th><th>Гео</th><th>Пол</th><th>Статус</th><th>Ссылка</th><th>Действия</th></tr></thead><tbody>';
     rows.forEach(f => {
-      const isInactive = f.status === 'inactive';
-      const statusHtml = isInactive
+      const isActive = f.status === 'active';
+      const statusHtml = !isActive
         ? `<button type="button" class="badge-layer status-toggle" data-fan-id="${f.id}" title="Клик — переключить на «Используется»" style="border-color:var(--danger); color:var(--danger); background:rgba(224,80,127,0.12); cursor:pointer; font-family:inherit;">Не используется</button>`
         : `<button type="button" class="badge-fan status-toggle" data-fan-id="${f.id}" title="Клик — переключить на «Не используется»" style="cursor:pointer; font-family:inherit; border:none;">Используется</button>`;
       const genderLabel = f.gender === 'M' ? 'М' : f.gender === 'F' ? 'Ж' : '— (клик)';
@@ -1934,8 +1995,8 @@
   document.getElementById('trashBtn').addEventListener('click', safe(openTrashManager));
   document.getElementById('backupsBtn').addEventListener('click', safe(()=>askBackupsPassword(openBackupsManager)));
   document.getElementById('resetBtn').addEventListener('click', ()=>{
-    if(!confirm('Удалить ВСЕ данные доски (фанпейджи, креативы, связи)? Это необратимо.')) return;
-    state = { layers: [], fanpages: [], creatives: [], links: [], deletedItems: [], currentLayerId: null };
+    if(!confirm('Удалить ВСЕ данные (доска и реестр фанпейджей)? Это необратимо.')) return;
+    state = { layers: [], fanpages: [], creatives: [], links: [], fanpageRegistry: [], deletedItems: [], currentLayerId: null };
     ensureAtLeastOneLayer();
     saveState(true);
     render();
@@ -1958,7 +2019,7 @@
     ['fpSearch','fpGeo','fpStatus','fpGender'].forEach(id=>document.getElementById(id).value='');
     renderFanpageTable();
   });
-  document.getElementById('addFanFromListBtn').addEventListener('click', safe(()=>addNodePrompt('fan')));
+  document.getElementById('addFanFromListBtn').addEventListener('click', safe(addRegistryPrompt));
   document.getElementById('bulkAddFanBtn').addEventListener('click', safe(openBulkAddFanpages));
 
   window.__startBoard = loadState;
