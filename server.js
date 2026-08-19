@@ -20,8 +20,18 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+const ACTIVITY_LOG_LIMIT = 300;
+
 async function logActivity(action){
-  try{ await pool.query('INSERT INTO activity_log (user_email, action) VALUES ($1,$2)', ['team', action]); }
+  try{
+    await pool.query('INSERT INTO activity_log (user_email, action) VALUES ($1,$2)', ['team', action]);
+    await pool.query(
+      `DELETE FROM activity_log WHERE id NOT IN (
+         SELECT id FROM activity_log ORDER BY created_at DESC LIMIT $1
+       )`,
+      [ACTIVITY_LOG_LIMIT]
+    );
+  }
   catch(e){ console.error('activity log failed', e.message); }
 }
 
