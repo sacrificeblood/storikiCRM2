@@ -358,9 +358,14 @@
     updateSaveIndicator();
     try{
       const result = await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
-      if(!result){ showToast('Не удалось сохранить данные'); }
+      if(!result){
+        showToast('Не удалось сохранить данные');
+        showErrorBanner('Сохранение вернулось пустым результатом — данные могли не долететь до сервера. Обновите страницу и проверьте, всё ли на месте.');
+      }
     }catch(e){
+      console.error('save failed:', e);
       showToast('Ошибка сохранения: ' + (e.message||e));
+      showErrorBanner('Не удалось сохранить данные: ' + (e && e.message ? e.message : e) + '\n\nВаше последнее действие могло не сохраниться. Проверьте после исправления и повторите его.');
     }finally{
       pendingSaves = Math.max(0, pendingSaves - 1);
       updateSaveIndicator();
