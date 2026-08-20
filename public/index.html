@@ -382,6 +382,28 @@
     padding:4px 10px; font-size:11px; cursor:pointer; font-family:inherit; font-weight:700;
   }
   .creo-paste-btn:hover{filter:brightness(1.2);}
+
+  /* CAMPAIGN */
+  table.camp-table{width:100%; border-collapse:collapse; min-width:1300px;}
+  table.camp-table th{
+    color:var(--green); text-align:left; padding:7px 10px; font-size:10px; text-transform:uppercase;
+    letter-spacing:0.3px; background:var(--panel); border-bottom:1px solid var(--border-soft); white-space:nowrap;
+  }
+  table.camp-table td{padding:7px 10px; font-size:12px; border-bottom:1px solid var(--border-soft); vertical-align:middle; white-space:nowrap;}
+  table.camp-table tr.camp-row-active{background:rgba(76,175,107,0.08);}
+  table.camp-table tr.camp-row-reject{background:rgba(220,74,92,0.1);}
+  table.camp-table tr.camp-row-paused{background:rgba(217,178,90,0.08);}
+  table.camp-table tr.camp-row-active:hover{background:rgba(76,175,107,0.14);}
+  table.camp-table tr.camp-row-reject:hover{background:rgba(220,74,92,0.16);}
+  table.camp-table tr.camp-row-paused:hover{background:rgba(217,178,90,0.14);}
+  .camp-task-btn, .camp-comment-btn{
+    border:1px solid var(--border); background:var(--panel-2); color:var(--text-dim); border-radius:6px;
+    padding:3px 8px; font-size:11px; cursor:pointer; font-family:inherit; max-width:130px; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; display:inline-block; vertical-align:middle;
+  }
+  .camp-task-btn:hover, .camp-comment-btn:hover{border-color:var(--amber); color:var(--amber);}
+  .camp-domain-link{color:#79d9ff; text-decoration:none;}
+  .camp-domain-link:hover{text-decoration:underline;}
   .ctx-menu{
     position:fixed; z-index:600; background:var(--panel); border:1px solid var(--border);
     border-radius:8px; box-shadow:0 12px 34px rgba(0,0,0,0.6); padding:6px; min-width:210px;
@@ -533,6 +555,8 @@
         <button class="sheet-tab active" id="sheetSpendRevBtn" data-sheet="spendRev">Spend/Rev</button>
         <button class="sheet-tab" id="sheetAccsBtn" data-sheet="accs">Accs</button>
         <button class="sheet-tab" id="sheetCreoBtn" data-sheet="creoChecker">CreoChecker</button>
+        <button class="sheet-tab" id="sheetCampaignBtn" data-sheet="campaign">Campaign</button>
+        <button class="sheet-tab" id="sheetGeoCipherBtn" data-sheet="geoCipher">Шифр GEO</button>
       </div>
       <div class="report-month-bar" id="reportMonthBar">
         <button class="report-nav-btn" id="reportPrevMonth" title="Предыдущий месяц">←</button>
@@ -605,9 +629,67 @@
         </div>
         <div id="creoTreeWrap"></div>
       </div>
+
+      <div id="campaignView" style="display:none;">
+        <div class="report-month-bar">
+          <button class="report-nav-btn" id="campPrevDay" title="Предыдущий день">←</button>
+          <span id="campDayLabel">—</span>
+          <button class="report-nav-btn" id="campNextDay" title="Следующий день">→</button>
+          <button class="btn btn-ghost" id="campTodayBtn" style="margin-left:10px;">Сегодня</button>
+        </div>
+        <div class="filters-card">
+          <div class="filter-field">
+            <label>Поиск</label>
+            <input type="text" id="campSearch" placeholder="гео, название, крео, кабинет, домен, fp...">
+          </div>
+          <div class="filter-field">
+            <label>Гео</label>
+            <select id="campGeoFilter"><option value="">Все</option></select>
+          </div>
+          <div class="filter-field">
+            <label>Статус</label>
+            <select id="campStatusFilter">
+              <option value="">Все</option>
+              <option value="active">Актив</option>
+              <option value="reject">Реджект</option>
+              <option value="paused">Пауза</option>
+            </select>
+          </div>
+          <button class="btn btn-fan" id="addCampGeoBtn" style="align-self:end;">+ Добавить гео</button>
+          <button class="btn btn-ghost" id="clearCampFiltersBtn" style="align-self:end;">Сбросить фильтры</button>
+          <div class="result-count" id="campResultCount"></div>
+        </div>
+        <div id="campTreeWrap"></div>
+      </div>
+
+      <div id="geoCipherView" style="display:none;">
+        <div class="filters-card">
+          <div class="filter-field">
+            <label>Поиск</label>
+            <input type="text" id="gcSearch" placeholder="geo, solo...">
+          </div>
+          <div class="filter-field">
+            <label>Europe</label>
+            <select id="gcEuropeFilter">
+              <option value="">Все</option>
+              <option value="yes">Да</option>
+              <option value="no">Нет</option>
+            </select>
+          </div>
+          <button class="btn btn-fan" id="addGeoCipherBtn" style="align-self:end;">+ Добавить GEO</button>
+          <button class="btn btn-ghost" id="clearGcFiltersBtn" style="align-self:end;">Сбросить фильтры</button>
+          <div class="result-count" id="gcResultCount"></div>
+        </div>
+        <div id="geoCipherTableWrap"></div>
+      </div>
     </div>
   </main>
 </div>
+
+<datalist id="fpAutocomplete"></datalist>
+<datalist id="domainAutocomplete"></datalist>
+<datalist id="bidBudgetAutocomplete"></datalist>
+<datalist id="pixelAutocomplete"></datalist>
 
 <div id="toast" class="toast"></div>
 
@@ -848,6 +930,8 @@
     setupFanpageTableDelegation();
     setupAccsDelegation();
     setupCreoDelegation();
+    setupCampaignDelegation();
+    setupGeoCipherDelegation();
     setupReportDelegation();
     applyTransform();
     render();
@@ -918,6 +1002,23 @@
       localCreoDays[dayKey] = { geos: mergedGeos, creatives: mergedCreatives };
     });
     state.reports.creoChecker.days = localCreoDays;
+
+    ensureReportsShape();
+    const remoteCamp = (remote.reports||{}).campaign || { days: {} };
+    const remoteCampDays = (remoteCamp.days && typeof remoteCamp.days === 'object') ? remoteCamp.days : {};
+    const localCampDays = state.reports.campaign.days || {};
+    const allCampDayKeys = new Set([...Object.keys(localCampDays), ...Object.keys(remoteCampDays)]);
+    allCampDayKeys.forEach(dayKey => {
+      const localDay = localCampDays[dayKey] || { geos: [], campaigns: [] };
+      const remoteDay = remoteCampDays[dayKey] || { geos: [], campaigns: [] };
+      const mergedGeos = mergeEntityArray(localDay.geos, remoteDay.geos, deletedIds);
+      const mergedCamps = mergeEntityArray(localDay.campaigns, remoteDay.campaigns, deletedIds)
+        .filter(c => mergedGeos.some(g=>g.id===c.geoId));
+      localCampDays[dayKey] = { geos: mergedGeos, campaigns: mergedCamps };
+    });
+    state.reports.campaign.days = localCampDays;
+
+    state.reports.geoCipher = mergeEntityArray(state.reports.geoCipher, (remote.reports||{}).geoCipher, deletedIds);
 
     if(Array.isArray(remote.layers)){
       const layerIds = new Set((state.layers||[]).map(l=>l.id));
@@ -1323,6 +1424,23 @@
         return;
       }
       day.creatives.push(entry.data);
+    }else if(entry.type === 'campgeo'){
+      ensureReportsShape();
+      const dayKey = entry.data._campDay || todayStr();
+      const day = ensureCampDay(dayKey);
+      day.geos.push(entry.data);
+    }else if(entry.type === 'campcampaign'){
+      ensureReportsShape();
+      const dayKey = entry.data._campDay || todayStr();
+      const day = ensureCampDay(dayKey);
+      if(!day.geos.some(g=>g.id===entry.data.geoId)){
+        showToast('Сначала восстановите гео для этой кампании (за ' + fmtDM(dayKey) + ')');
+        return;
+      }
+      day.campaigns.push(entry.data);
+    }else if(entry.type === 'geocipher'){
+      ensureReportsShape();
+      state.reports.geoCipher.push(entry.data);
     }
     state.deletedItems = state.deletedItems.filter(t=>t.id!==trashId);
     saveState(true);
@@ -1689,7 +1807,9 @@
         const row = document.createElement('div'); row.className='layer-row';
         const typeLabel = entry.type === 'fan' ? 'Фанпейдж (доска)' : entry.type === 'cre' ? 'Креатив' : entry.type === 'freg' ? 'Фанпейдж (реестр)'
           : entry.type === 'acc' ? 'Аккаунт (Accs)' : entry.type === 'accsoc' ? 'Soc (Accs)' : entry.type === 'accagent' ? 'Агент (Accs)'
-          : entry.type === 'creogeo' ? 'Гео (CreoChecker)' : entry.type === 'creocreative' ? 'Креатив (CreoChecker)' : 'Связь';
+          : entry.type === 'creogeo' ? 'Гео (CreoChecker)' : entry.type === 'creocreative' ? 'Креатив (CreoChecker)'
+          : entry.type === 'campgeo' ? 'Гео (Campaign)' : entry.type === 'campcampaign' ? 'Кампания (Campaign)'
+          : entry.type === 'geocipher' ? 'GEO (Шифр)' : 'Связь';
         const info = document.createElement('div');
         info.style.cssText = 'flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
         info.innerHTML = `<span class="muted" style="font-size:11px;">${typeLabel} · ${timeAgo(entry.deletedAt)}</span><br>${escapeHtml(entry.label||'—')}`;
@@ -2143,7 +2263,7 @@
   }
 
   // ---------- REPORT VIEW (Отчётность) ----------
-  const REPORT_SHEETS = ['spendRev', 'accs', 'creoChecker']; // more sheets get added here later, one at a time
+  const REPORT_SHEETS = ['spendRev', 'accs', 'creoChecker', 'campaign', 'geoCipher']; // more sheets get added here later, one at a time
   let currentReportSheet = 'spendRev';
   let currentReportMonth = null; // 'YYYY-MM'
 
@@ -2194,6 +2314,8 @@
     ensureReportsShape();
     document.getElementById('accsView').style.display = 'none';
     document.getElementById('creoView').style.display = 'none';
+    document.getElementById('campaignView').style.display = 'none';
+    document.getElementById('geoCipherView').style.display = 'none';
     document.getElementById('reportMonthBar').style.display = 'none';
     document.getElementById('reportTableWrap').style.display = 'none';
     if(currentReportSheet === 'accs'){
@@ -2202,6 +2324,12 @@
     }else if(currentReportSheet === 'creoChecker'){
       document.getElementById('creoView').style.display = 'block';
       renderCreoView();
+    }else if(currentReportSheet === 'campaign'){
+      document.getElementById('campaignView').style.display = 'block';
+      renderCampaignView();
+    }else if(currentReportSheet === 'geoCipher'){
+      document.getElementById('geoCipherView').style.display = 'block';
+      renderGeoCipherView();
     }else{
       document.getElementById('reportMonthBar').style.display = 'flex';
       document.getElementById('reportTableWrap').style.display = 'block';
@@ -2304,6 +2432,8 @@
     document.getElementById('sheetSpendRevBtn').classList.toggle('active', sheet==='spendRev');
     document.getElementById('sheetAccsBtn').classList.toggle('active', sheet==='accs');
     document.getElementById('sheetCreoBtn').classList.toggle('active', sheet==='creoChecker');
+    document.getElementById('sheetCampaignBtn').classList.toggle('active', sheet==='campaign');
+    document.getElementById('sheetGeoCipherBtn').classList.toggle('active', sheet==='geoCipher');
   }
   document.getElementById('sheetSpendRevBtn').addEventListener('click', safe(()=>{
     currentReportSheet = 'spendRev';
@@ -2318,6 +2448,16 @@
   document.getElementById('sheetCreoBtn').addEventListener('click', safe(()=>{
     currentReportSheet = 'creoChecker';
     setActiveSheetTab('creoChecker');
+    renderReportView();
+  }));
+  document.getElementById('sheetCampaignBtn').addEventListener('click', safe(()=>{
+    currentReportSheet = 'campaign';
+    setActiveSheetTab('campaign');
+    renderReportView();
+  }));
+  document.getElementById('sheetGeoCipherBtn').addEventListener('click', safe(()=>{
+    currentReportSheet = 'geoCipher';
+    setActiveSheetTab('geoCipher');
     renderReportView();
   }));
 
@@ -2391,6 +2531,10 @@
       });
       state.reports.creoChecker = { days: { [bucketDay]: { geos: legacyGeos, creatives: fixedCreatives } } };
     }
+    if(!state.reports.campaign || typeof state.reports.campaign !== 'object' || !state.reports.campaign.days){
+      state.reports.campaign = { days: {} };
+    }
+    if(!Array.isArray(state.reports.geoCipher)) state.reports.geoCipher = [];
   }
 
   function accsData(){ ensureReportsShape(); return state.reports.accs; }
@@ -3366,6 +3510,622 @@
   document.getElementById('clearCreoFiltersBtn').addEventListener('click', ()=>{
     ['creoSearch','creoGeoFilter','creoOsFilter'].forEach(id=>document.getElementById(id).value='');
     renderCreoView();
+  });
+
+  // ---------- CAMPAIGN SHEET (Geo -> Campaigns, day-sheets like CreoChecker, + duplication) ----------
+  const CAMP_STATUS = {
+    active: { label: 'Актив',   color: '#4caf6b' },
+    reject: { label: 'Реджект', color: 'var(--danger)' },
+    paused: { label: 'Пауза',   color: 'var(--amber)' }
+  };
+  let collapsedCampGroups = new Set();
+  let currentCampDay = null;
+
+  function campData(){
+    ensureReportsShape();
+    if(!currentCampDay) currentCampDay = todayStr();
+    if(!state.reports.campaign.days[currentCampDay]){
+      state.reports.campaign.days[currentCampDay] = { geos: [], campaigns: [] };
+    }
+    const d = state.reports.campaign.days[currentCampDay];
+    if(!Array.isArray(d.geos)) d.geos = [];
+    if(!Array.isArray(d.campaigns)) d.campaigns = [];
+    return d;
+  }
+  function ensureCampDay(dayKey){
+    if(!state.reports.campaign.days[dayKey]){
+      state.reports.campaign.days[dayKey] = { geos: [], campaigns: [] };
+    }
+    const d = state.reports.campaign.days[dayKey];
+    if(!Array.isArray(d.geos)) d.geos = [];
+    if(!Array.isArray(d.campaigns)) d.campaigns = [];
+    return d;
+  }
+
+  // ---- Geo CRUD ----
+  function openCampGeoEditor(id){
+    const isEdit = !!id;
+    const data = campData();
+    const item = isEdit ? data.geos.find(g=>g.id===id) : { id: uid(), name: '' };
+    if(isEdit && !item) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal'; modal.style.maxWidth = '320px';
+    modal.innerHTML = `<h3>${isEdit ? 'Гео' : 'Новое гео'}</h3>`;
+    const field = document.createElement('div'); field.className='field';
+    field.innerHTML = `<label>Название гео</label>`;
+    const nameInput = document.createElement('input');
+    nameInput.placeholder = 'например, Bolivia'; nameInput.value = item.name || '';
+    field.appendChild(nameInput);
+    modal.appendChild(field);
+    const actions = document.createElement('div'); actions.className='modal-actions';
+    if(isEdit){
+      const delBtn = document.createElement('button');
+      delBtn.className='btn btn-danger'; delBtn.textContent='Удалить'; delBtn.type='button';
+      delBtn.addEventListener('click', safe(()=>{ document.body.removeChild(overlay); deleteCampGeo(id); }));
+      actions.appendChild(delBtn);
+    }
+    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
+    cancelBtn.addEventListener('click', safe(()=>document.body.removeChild(overlay)));
+    actions.appendChild(cancelBtn);
+    const saveBtn = document.createElement('button'); saveBtn.className='btn btn-fan'; saveBtn.textContent='Сохранить'; saveBtn.type='button';
+    saveBtn.addEventListener('click', safe(()=>{
+      if(!nameInput.value.trim()){ showToast('Введите гео'); return; }
+      item.name = nameInput.value.trim();
+      if(!isEdit) data.geos.push(item);
+      saveState(true);
+      render();
+      document.body.removeChild(overlay);
+    }));
+    actions.appendChild(saveBtn);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+    nameInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') saveBtn.click(); });
+    nameInput.focus();
+  }
+  function deleteCampGeo(id){
+    const data = campData();
+    const item = data.geos.find(g=>g.id===id);
+    if(!item) return;
+    const campsUnder = data.campaigns.filter(c=>c.geoId===id);
+    if(!confirm(`Удалить гео "${item.name}" (за ${fmtDM(currentCampDay)}) вместе с ${campsUnder.length} кампаниями? Другие дни это не затронет.`)) return;
+    campsUnder.forEach(c => pushToTrash('campcampaign', {...c, _campDay: currentCampDay}, item.name + ' / ' + c.name));
+    pushToTrash('campgeo', {...item, _campDay: currentCampDay}, item.name);
+    data.campaigns = data.campaigns.filter(c=>c.geoId!==id);
+    data.geos = data.geos.filter(g=>g.id!==id);
+    saveState(true);
+    render();
+  }
+
+  // ---- automation: collect FP/domain suggestions the user has already typed ----
+  function collectCampAutocomplete(){
+    const domains = new Set();
+    const bids = new Set();
+    const pixels = new Set();
+    Object.values(state.reports.campaign.days || {}).forEach(day => {
+      (day.campaigns||[]).forEach(c => {
+        if(c.domain) domains.add(c.domain);
+        if(c.bidBudget) bids.add(c.bidBudget);
+        if(c.pixel) pixels.add(c.pixel);
+      });
+    });
+    ((state.reports.accs && state.reports.accs.socs) || []).forEach(s => { if(s.pixel) pixels.add(s.pixel); });
+    const fpNames = (state.fanpageRegistry || []).map(f=>f.name).filter(Boolean);
+    const fpList = document.getElementById('fpAutocomplete');
+    fpList.innerHTML = fpNames.map(n=>`<option value="${escapeHtml(n)}">`).join('');
+    const domList = document.getElementById('domainAutocomplete');
+    domList.innerHTML = Array.from(domains).map(n=>`<option value="${escapeHtml(n)}">`).join('');
+    const bidList = document.getElementById('bidBudgetAutocomplete');
+    bidList.innerHTML = Array.from(bids).map(n=>`<option value="${escapeHtml(n)}">`).join('');
+    const pixelList = document.getElementById('pixelAutocomplete');
+    pixelList.innerHTML = Array.from(pixels).map(n=>`<option value="${escapeHtml(n)}">`).join('');
+  }
+
+  // ---- Campaign CRUD ----
+  function openCampaignEditor(geoId, id){
+    const isEdit = !!id;
+    const data = campData();
+    const item = isEdit ? data.campaigns.find(c=>c.id===id) : {
+      id: uid(), geoId, name:'', status:'active', comment:'', task:'',
+      creative:'', bidBudget:'', adsetsCount:1, dateFeed: todayStr(),
+      cabinet:'', pixel:'', domain:'', fp:''
+    };
+    if(isEdit && !item) return;
+    collectCampAutocomplete();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `<h3>${isEdit?'Кампания':'Новая кампания'} <span class="muted" style="font-size:11px;font-weight:400;">— лист ${fmtDM(currentCampDay)}</span></h3>`;
+    function field(label, input){
+      const f = document.createElement('div'); f.className='field';
+      f.innerHTML = `<label>${label}</label>`; f.appendChild(input); modal.appendChild(f); return f;
+    }
+    const nameInput = document.createElement('input'); nameInput.placeholder='название кампании'; nameInput.value = item.name || '';
+    field('Название кампании', nameInput);
+    const creativeInput = document.createElement('input'); creativeInput.placeholder='например, BOpassbak00082'; creativeInput.value = item.creative || '';
+    field('Крео', creativeInput);
+    const bidInput = document.createElement('input'); bidInput.placeholder='например, 1-1-1 500$ CBO bid100'; bidInput.value = item.bidBudget || '';
+    bidInput.setAttribute('list', 'bidBudgetAutocomplete');
+    field('БИД/Бюджет', bidInput);
+    const adsetsInput = document.createElement('input'); adsetsInput.type='number'; adsetsInput.min='0'; adsetsInput.value = item.adsetsCount ?? 1;
+    field('Кол-во адсетов', adsetsInput);
+    const dateInput = document.createElement('input'); dateInput.type='date'; dateInput.value = item.dateFeed || currentCampDay;
+    field('Дата залива', dateInput);
+    const cabinetInput = document.createElement('input'); cabinetInput.placeholder='ID кабинета'; cabinetInput.value = item.cabinet || '';
+    field('Кабинет', cabinetInput);
+    const pixelInput = document.createElement('input'); pixelInput.placeholder='ID пикселя'; pixelInput.value = item.pixel || '';
+    pixelInput.setAttribute('list', 'pixelAutocomplete');
+    field('Пиксель', pixelInput);
+    const domainInput = document.createElement('input'); domainInput.placeholder='например, apple.com'; domainInput.value = item.domain || '';
+    domainInput.setAttribute('list', 'domainAutocomplete');
+    field('Домен', domainInput);
+    const fpInput = document.createElement('input'); fpInput.placeholder='фанпейдж'; fpInput.value = item.fp || '';
+    fpInput.setAttribute('list', 'fpAutocomplete');
+    field('FP', fpInput);
+
+    const actions = document.createElement('div'); actions.className='modal-actions';
+    if(isEdit){
+      const delBtn = document.createElement('button');
+      delBtn.className='btn btn-danger'; delBtn.textContent='Удалить'; delBtn.type='button';
+      delBtn.addEventListener('click', safe(()=>{ document.body.removeChild(overlay); deleteCampaign(id); }));
+      actions.appendChild(delBtn);
+    }
+    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
+    cancelBtn.addEventListener('click', safe(()=>document.body.removeChild(overlay)));
+    actions.appendChild(cancelBtn);
+    const saveBtn = document.createElement('button'); saveBtn.className='btn btn-fan'; saveBtn.textContent='Сохранить'; saveBtn.type='button';
+    saveBtn.addEventListener('click', safe(()=>{
+      if(!nameInput.value.trim()){ showToast('Введите название кампании'); return; }
+      item.name = nameInput.value.trim();
+      item.creative = creativeInput.value.trim();
+      item.bidBudget = bidInput.value.trim();
+      item.adsetsCount = Number(adsetsInput.value) || 0;
+      item.dateFeed = dateInput.value || currentCampDay;
+      item.cabinet = cabinetInput.value.trim();
+      item.pixel = pixelInput.value.trim();
+      item.domain = domainInput.value.trim();
+      item.fp = fpInput.value.trim();
+      if(!isEdit) data.campaigns.push(item);
+      saveState(true);
+      render();
+      document.body.removeChild(overlay);
+    }));
+    actions.appendChild(saveBtn);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+    nameInput.focus();
+  }
+  function deleteCampaign(id){
+    const data = campData();
+    const item = data.campaigns.find(c=>c.id===id);
+    if(!item) return;
+    if(!confirm(`Удалить кампанию "${item.name}" с листа ${fmtDM(currentCampDay)}?`)) return;
+    pushToTrash('campcampaign', {...item, _campDay: currentCampDay}, item.name + ' (' + fmtDM(currentCampDay) + ')');
+    data.campaigns = data.campaigns.filter(c=>c.id!==id);
+    saveState(true);
+    render();
+  }
+
+  // ---- дублирование: в том же дне, или на завтра ----
+  function duplicateCampaignSameDay(id){
+    const data = campData();
+    const item = data.campaigns.find(c=>c.id===id);
+    if(!item) return;
+    const copy = { ...item, id: uid(), name: item.name + ' (копия)' };
+    data.campaigns.push(copy);
+    saveState(true);
+    render();
+    showToast('Кампания продублирована');
+  }
+  function transferCampaignToNextDay(id){
+    const today = campData();
+    const item = today.campaigns.find(c=>c.id===id);
+    if(!item) return;
+    const nextDayKey = addOneDay(currentCampDay);
+    const nextDay = ensureCampDay(nextDayKey);
+    const geoName = (today.geos.find(g=>g.id===item.geoId) || {}).name || 'Без гео';
+    let targetGeo = nextDay.geos.find(g=>g.name===geoName);
+    if(!targetGeo){ targetGeo = { id: uid(), name: geoName }; nextDay.geos.push(targetGeo); }
+    nextDay.campaigns.push({
+      ...item, id: uid(), geoId: targetGeo.id, dateFeed: nextDayKey
+    });
+    saveState(true);
+    render();
+    showToast(`«${item.name}» перенесена на лист ${fmtDM(nextDayKey)}`);
+  }
+
+  // ---- click-to-edit: статус+коммент, задача ----
+  function openCampStatusEditor(id){
+    const data = campData();
+    const item = data.campaigns.find(c=>c.id===id);
+    if(!item) return;
+    let pendingStatus = item.status || 'active';
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal'; modal.style.maxWidth = '360px';
+    modal.innerHTML = `<h3>Статус — ${escapeHtml(item.name||'—')}</h3>`;
+    const toggleRow = document.createElement('div');
+    toggleRow.style.cssText = 'display:flex; gap:6px; margin-bottom:14px;';
+    const buttons = {};
+    Object.keys(CAMP_STATUS).forEach(key=>{
+      const st = CAMP_STATUS[key];
+      const btn = document.createElement('button');
+      btn.type='button'; btn.textContent = st.label;
+      buttons[key] = btn;
+      btn.addEventListener('click', ()=>{ pendingStatus = key; paint(); });
+      toggleRow.appendChild(btn);
+    });
+    function paint(){
+      Object.keys(CAMP_STATUS).forEach(key=>{
+        const st = CAMP_STATUS[key];
+        buttons[key].style.cssText = `flex:1; padding:8px; border-radius:6px; cursor:pointer; font-weight:700; font-size:12.5px; border:1px solid ${st.color}; background:${pendingStatus===key?st.color+'33':'transparent'}; color:${st.color};`;
+      });
+    }
+    paint();
+    modal.appendChild(toggleRow);
+    const field = document.createElement('div'); field.className='field';
+    field.innerHTML = `<label>Коммент (коротко)</label>`;
+    const commentInput = document.createElement('input');
+    commentInput.placeholder = 'например, реджект 19.08 2:00';
+    commentInput.value = item.comment || '';
+    field.appendChild(commentInput);
+    modal.appendChild(field);
+    const actions = document.createElement('div'); actions.className='modal-actions';
+    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
+    cancelBtn.addEventListener('click', ()=>document.body.removeChild(overlay));
+    actions.appendChild(cancelBtn);
+    const saveBtn = document.createElement('button'); saveBtn.className='btn btn-fan'; saveBtn.textContent='Сохранить'; saveBtn.type='button';
+    saveBtn.addEventListener('click', safe(()=>{
+      item.status = pendingStatus;
+      item.comment = commentInput.value.trim();
+      saveState(true);
+      render();
+      document.body.removeChild(overlay);
+    }));
+    actions.appendChild(saveBtn);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+  }
+  function openCampTaskEditor(id){
+    const data = campData();
+    const item = data.campaigns.find(c=>c.id===id);
+    if(!item) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `<h3>Задача — ${escapeHtml(item.name||'—')}</h3>`;
+    const field = document.createElement('div'); field.className='field';
+    const textarea = document.createElement('textarea');
+    textarea.rows = 4;
+    textarea.style.cssText = 'padding:9px 10px; border:1px solid var(--border); border-radius:6px; font-size:14px; background:var(--panel-2); color:var(--text); font-family:inherit; resize:vertical;';
+    textarea.value = item.task || '';
+    field.appendChild(textarea);
+    modal.appendChild(field);
+    const actions = document.createElement('div'); actions.className='modal-actions';
+    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
+    cancelBtn.addEventListener('click', ()=>document.body.removeChild(overlay));
+    actions.appendChild(cancelBtn);
+    const saveBtn = document.createElement('button'); saveBtn.className='btn btn-fan'; saveBtn.textContent='Сохранить'; saveBtn.type='button';
+    saveBtn.addEventListener('click', safe(()=>{
+      item.task = textarea.value.trim();
+      saveState(true);
+      render();
+      document.body.removeChild(overlay);
+    }));
+    actions.appendChild(saveBtn);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+    textarea.focus();
+  }
+
+  function populateCampFilterOptions(){
+    const data = campData();
+    const geoSel = document.getElementById('campGeoFilter');
+    const cur = geoSel.value;
+    geoSel.innerHTML = '<option value="">Все</option>' + data.geos.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(g=>`<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
+    geoSel.value = cur;
+  }
+
+  function renderCampaignView(){
+    if(!currentCampDay) currentCampDay = todayStr();
+    document.getElementById('campDayLabel').textContent = fmtDMY(currentCampDay);
+    const data = campData();
+    populateCampFilterOptions();
+    const search = (document.getElementById('campSearch').value || '').toLowerCase().trim();
+    const geoFilter = document.getElementById('campGeoFilter').value;
+    const statusFilter = document.getElementById('campStatusFilter').value;
+
+    let geos = data.geos.slice();
+    if(geoFilter) geos = geos.filter(g=>g.id===geoFilter);
+
+    let totalShown = 0;
+    let html = '';
+
+    geos.sort((a,b)=>a.name.localeCompare(b.name)).forEach(geo => {
+      let camps = data.campaigns.filter(c=>c.geoId===geo.id);
+      if(statusFilter) camps = camps.filter(c=>c.status===statusFilter);
+      if(search){
+        const geoMatches = geo.name.toLowerCase().includes(search);
+        if(!geoMatches){
+          camps = camps.filter(c =>
+            (c.name||'').toLowerCase().includes(search) ||
+            (c.creative||'').toLowerCase().includes(search) ||
+            (c.cabinet||'').toLowerCase().includes(search) ||
+            (c.domain||'').toLowerCase().includes(search) ||
+            (c.fp||'').toLowerCase().includes(search) ||
+            (c.task||'').toLowerCase().includes(search) ||
+            (c.comment||'').toLowerCase().includes(search)
+          );
+        }
+      }
+      if((geoFilter || statusFilter || search) && camps.length === 0){
+        if(!(search && geo.name.toLowerCase().includes(search) && !statusFilter)) return;
+      }
+
+      totalShown += camps.length;
+      const totalAdsets = camps.reduce((s,c)=>s+(Number(c.adsetsCount)||0), 0);
+      const geoKey = 'geo:' + geo.id;
+      const geoOpen = !collapsedCampGroups.has(geoKey);
+      html += `<div class="accs-group">
+        <div class="accs-agent-header" data-group-key="${geoKey}">
+          <span class="accs-caret ${geoOpen?'open':''}">▸</span>
+          <span style="flex:1;">${escapeHtml(geo.name)} <span class="count">— ${camps.length} кампаний, ${totalAdsets} адсетов</span></span>
+          <button type="button" class="accs-mini-btn add-camp-btn" data-geo-id="${geo.id}" title="Добавить кампанию">+ Кампания</button>
+          <button type="button" class="accs-mini-btn edit-camp-geo-btn" data-geo-id="${geo.id}" title="Изменить">✎</button>
+          <button type="button" class="accs-mini-btn del-camp-geo-btn" data-geo-id="${geo.id}" title="Удалить">✕</button>
+        </div>`;
+      if(geoOpen){
+        if(camps.length === 0){
+          html += `<div class="muted" style="padding:8px 12px 8px 30px; font-size:12px;">Нет кампаний на этом дне — добавьте кнопкой «+ Кампания» выше.</div>`;
+        }else{
+          html += `<div class="creo-table-scroll"><table class="camp-table"><thead><tr>
+            <th>Название кампании</th><th>Статус / Коммент</th><th>Задача</th><th>Крео</th><th>БИД/Бюджет</th>
+            <th>Кол-во адсетов</th><th>Дата залива</th><th>Кабинет</th><th>Пиксель</th><th>Домен</th><th>FP</th><th></th>
+          </tr></thead><tbody>`;
+          camps.forEach(c => {
+            const st = CAMP_STATUS[c.status] || CAMP_STATUS.active;
+            const rowClass = c.status==='reject' ? 'camp-row-reject' : c.status==='paused' ? 'camp-row-paused' : 'camp-row-active';
+            const domainHtml = c.domain
+              ? `<a class="camp-domain-link" href="${c.domain.match(/^https?:\/\//) ? escapeHtml(c.domain) : 'https://'+escapeHtml(c.domain)}" target="_blank" rel="noopener">${escapeHtml(c.domain)}</a>`
+              : '<span class="muted">—</span>';
+            html += `<tr data-campaign-id="${c.id}" class="${rowClass}">
+              <td><strong>${escapeHtml(c.name||'—')}</strong></td>
+              <td>
+                <button type="button" class="os-badge status-camp-click" data-campaign-id="${c.id}" style="color:${st.color}; border-color:${st.color}; background:${st.color}22; cursor:pointer; font-family:inherit;">${st.label}</button>
+                ${c.comment ? `<div class="muted" style="font-size:10.5px; margin-top:2px;">${escapeHtml(c.comment)}</div>` : ''}
+              </td>
+              <td><button type="button" class="camp-task-btn task-click" data-campaign-id="${c.id}" title="${c.task?escapeHtml(c.task):'Добавить задачу'}">${c.task?escapeHtml(c.task):'+ задача'}</button></td>
+              <td>${escapeHtml(c.creative||'—')}</td>
+              <td>${escapeHtml(c.bidBudget||'—')}</td>
+              <td>${Number(c.adsetsCount)||0}</td>
+              <td>${escapeHtml(fmtDMY(c.dateFeed)||'—')}</td>
+              <td>${escapeHtml(c.cabinet||'—')}</td>
+              <td>${escapeHtml(c.pixel||'—')}</td>
+              <td>${domainHtml}</td>
+              <td>${escapeHtml(c.fp||'—')}</td>
+              <td>
+                <button type="button" class="accs-mini-btn dup-same-day-btn" data-campaign-id="${c.id}" title="Дублировать в этом же дне">⧉ Дубль</button>
+                <button type="button" class="accs-mini-btn transfer-camp-day-btn" data-campaign-id="${c.id}" title="Перенести на следующий день">→ на завтра</button>
+                <button type="button" class="accs-mini-btn edit-camp-btn" data-campaign-id="${c.id}" title="Изменить">✎</button>
+                <button type="button" class="accs-mini-btn del-camp-btn" data-campaign-id="${c.id}" title="Удалить">✕</button>
+              </td>
+            </tr>`;
+          });
+          html += '</tbody></table></div>';
+        }
+      }
+      html += '</div>';
+    });
+
+    document.getElementById('campResultCount').textContent = `Найдено: ${totalShown}`;
+    const wrap = document.getElementById('campTreeWrap');
+    wrap.innerHTML = html || '<div class="empty-state">На этом дне пока пусто. Начните с кнопки «+ Добавить гео» выше — или перенесите кампанию с предыдущего дня.</div>';
+  }
+
+  function setupCampaignDelegation(){
+    const wrap = document.getElementById('campTreeWrap');
+    wrap.addEventListener('click', safe((e)=>{
+      const addCampBtn = e.target.closest('.add-camp-btn');
+      if(addCampBtn){ openCampaignEditor(addCampBtn.dataset.geoId, null); return; }
+      const editGeoBtn = e.target.closest('.edit-camp-geo-btn');
+      if(editGeoBtn){ openCampGeoEditor(editGeoBtn.dataset.geoId); return; }
+      const delGeoBtn = e.target.closest('.del-camp-geo-btn');
+      if(delGeoBtn){ deleteCampGeo(delGeoBtn.dataset.geoId); return; }
+
+      const statusBtn = e.target.closest('.status-camp-click');
+      if(statusBtn){ openCampStatusEditor(statusBtn.dataset.campaignId); return; }
+      const taskBtn = e.target.closest('.task-click');
+      if(taskBtn){ openCampTaskEditor(taskBtn.dataset.campaignId); return; }
+      const dupBtn = e.target.closest('.dup-same-day-btn');
+      if(dupBtn){ duplicateCampaignSameDay(dupBtn.dataset.campaignId); return; }
+      const transferBtn = e.target.closest('.transfer-camp-day-btn');
+      if(transferBtn){ transferCampaignToNextDay(transferBtn.dataset.campaignId); return; }
+      const editCampBtn = e.target.closest('.edit-camp-btn');
+      if(editCampBtn){ openCampaignEditor(null, editCampBtn.dataset.campaignId); return; }
+      const delCampBtn = e.target.closest('.del-camp-btn');
+      if(delCampBtn){ deleteCampaign(delCampBtn.dataset.campaignId); return; }
+
+      const groupHeader = e.target.closest('.accs-agent-header');
+      if(groupHeader){
+        const key = groupHeader.dataset.groupKey;
+        if(collapsedCampGroups.has(key)) collapsedCampGroups.delete(key);
+        else collapsedCampGroups.add(key);
+        renderCampaignView();
+        return;
+      }
+    }));
+  }
+
+  document.getElementById('addCampGeoBtn').addEventListener('click', safe(()=>openCampGeoEditor(null)));
+  document.getElementById('campPrevDay').addEventListener('click', safe(()=>{
+    currentCampDay = subOneDay(currentCampDay || todayStr());
+    renderCampaignView();
+  }));
+  document.getElementById('campNextDay').addEventListener('click', safe(()=>{
+    currentCampDay = addOneDay(currentCampDay || todayStr());
+    ensureCampDay(currentCampDay);
+    renderCampaignView();
+  }));
+  document.getElementById('campTodayBtn').addEventListener('click', safe(()=>{
+    currentCampDay = todayStr();
+    renderCampaignView();
+  }));
+  ['campSearch','campGeoFilter','campStatusFilter'].forEach(id=>{
+    document.getElementById(id).addEventListener('input', renderCampaignView);
+    document.getElementById(id).addEventListener('change', renderCampaignView);
+  });
+  document.getElementById('clearCampFiltersBtn').addEventListener('click', ()=>{
+    ['campSearch','campGeoFilter','campStatusFilter'].forEach(id=>document.getElementById(id).value='');
+    renderCampaignView();
+  });
+
+  // ---------- ШИФР GEO (flat reference table: Geo / Solo / Europe — no day-splitting, it's a lookup) ----------
+  function openGeoCipherEditor(id){
+    const isEdit = !!id;
+    const item = isEdit ? state.reports.geoCipher.find(g=>g.id===id) : { id: uid(), geo:'', solo:'', europe:false };
+    if(isEdit && !item) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal'; modal.style.maxWidth = '360px';
+    modal.innerHTML = `<h3>${isEdit?'GEO':'Новое GEO'}</h3>`;
+    function field(label, input){
+      const f = document.createElement('div'); f.className='field';
+      f.innerHTML = `<label>${label}</label>`; f.appendChild(input); modal.appendChild(f); return f;
+    }
+    const geoInput = document.createElement('input'); geoInput.placeholder='например, Bolivia'; geoInput.value = item.geo || '';
+    field('Geo', geoInput);
+    const soloInput = document.createElement('input'); soloInput.placeholder='например, BO'; soloInput.value = item.solo || '';
+    field('Solo (шифр для наименований)', soloInput);
+    const europeSelect = document.createElement('select');
+    europeSelect.innerHTML = '<option value="no">Нет</option><option value="yes">Да</option>';
+    europeSelect.value = item.europe ? 'yes' : 'no';
+    field('Europe', europeSelect);
+
+    const actions = document.createElement('div'); actions.className='modal-actions';
+    if(isEdit){
+      const delBtn = document.createElement('button');
+      delBtn.className='btn btn-danger'; delBtn.textContent='Удалить'; delBtn.type='button';
+      delBtn.addEventListener('click', safe(()=>{ document.body.removeChild(overlay); deleteGeoCipher(id); }));
+      actions.appendChild(delBtn);
+    }
+    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
+    cancelBtn.addEventListener('click', safe(()=>document.body.removeChild(overlay)));
+    actions.appendChild(cancelBtn);
+    const saveBtn = document.createElement('button'); saveBtn.className='btn btn-fan'; saveBtn.textContent='Сохранить'; saveBtn.type='button';
+    saveBtn.addEventListener('click', safe(()=>{
+      if(!geoInput.value.trim()){ showToast('Введите Geo'); return; }
+      item.geo = geoInput.value.trim();
+      item.solo = soloInput.value.trim();
+      item.europe = europeSelect.value === 'yes';
+      if(!isEdit) state.reports.geoCipher.push(item);
+      saveState(true);
+      render();
+      document.body.removeChild(overlay);
+    }));
+    actions.appendChild(saveBtn);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+    geoInput.focus();
+  }
+  function deleteGeoCipher(id){
+    const item = state.reports.geoCipher.find(g=>g.id===id);
+    if(!item) return;
+    if(!confirm(`Удалить GEO "${item.geo}"?`)) return;
+    pushToTrash('geocipher', item, item.geo);
+    state.reports.geoCipher = state.reports.geoCipher.filter(g=>g.id!==id);
+    saveState(true);
+    render();
+  }
+
+  function setupGeoCipherDelegation(){
+    const wrap = document.getElementById('geoCipherTableWrap');
+    wrap.addEventListener('click', safe((e)=>{
+      const europeToggle = e.target.closest('.europe-toggle');
+      if(europeToggle){
+        const item = state.reports.geoCipher.find(g=>g.id===europeToggle.dataset.gcId);
+        if(item){ item.europe = !item.europe; saveState(true); render(); }
+        return;
+      }
+      const editBtn = e.target.closest('.edit-gc');
+      const delBtn = e.target.closest('.del-gc');
+      if(!editBtn && !delBtn) return;
+      const tr = e.target.closest('tr');
+      if(!tr) return;
+      const id = tr.dataset.gcId;
+      if(editBtn){ openGeoCipherEditor(id); }
+      else if(delBtn){ deleteGeoCipher(id); }
+    }));
+  }
+
+  function renderGeoCipherView(){
+    const search = (document.getElementById('gcSearch').value || '').toLowerCase().trim();
+    const europeFilter = document.getElementById('gcEuropeFilter').value;
+
+    let rows = state.reports.geoCipher.slice();
+    if(europeFilter) rows = rows.filter(g => (g.europe ? 'yes' : 'no') === europeFilter);
+    if(search){
+      rows = rows.filter(g =>
+        (g.geo||'').toLowerCase().includes(search) ||
+        (g.solo||'').toLowerCase().includes(search)
+      );
+    }
+    rows.sort((a,b)=>a.geo.localeCompare(b.geo));
+
+    document.getElementById('gcResultCount').textContent = `Найдено: ${rows.length}`;
+    const wrap = document.getElementById('geoCipherTableWrap');
+    if(rows.length === 0){
+      wrap.innerHTML = '<div class="empty-state">Пока пусто. Добавьте GEO кнопкой выше.</div>';
+      return;
+    }
+    let html = '<table><thead><tr><th>Geo</th><th>Solo</th><th>Europe</th><th>Действия</th></tr></thead><tbody>';
+    rows.forEach(g => {
+      const europeHtml = g.europe
+        ? `<button type="button" class="badge-fan europe-toggle" data-gc-id="${g.id}" style="cursor:pointer; font-family:inherit; border:none;">Да</button>`
+        : `<button type="button" class="badge-layer europe-toggle" data-gc-id="${g.id}" style="cursor:pointer; font-family:inherit;">Нет</button>`;
+      html += `<tr data-gc-id="${g.id}">
+        <td><span class="badge-fan">${escapeHtml(g.geo)}</span></td>
+        <td>${g.solo ? `<span class="badge-cre">${escapeHtml(g.solo)}</span>` : '<span class="muted">—</span>'}</td>
+        <td>${europeHtml}</td>
+        <td class="row-actions">
+          <button class="btn-plain edit-gc" type="button">✎ Изм.</button>
+          <button class="btn-danger del-gc" type="button">✕ Удалить</button>
+        </td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+  }
+
+  document.getElementById('addGeoCipherBtn').addEventListener('click', safe(()=>openGeoCipherEditor(null)));
+  ['gcSearch','gcEuropeFilter'].forEach(id=>{
+    document.getElementById(id).addEventListener('input', renderGeoCipherView);
+    document.getElementById(id).addEventListener('change', renderGeoCipherView);
+  });
+  document.getElementById('clearGcFiltersBtn').addEventListener('click', ()=>{
+    ['gcSearch','gcEuropeFilter'].forEach(id=>document.getElementById(id).value='');
+    renderGeoCipherView();
   });
 
   function renderTable(){
