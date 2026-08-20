@@ -20,7 +20,13 @@
   }
   function saveViewState(){
     try{
-      localStorage.setItem(VIEW_STATE_KEY, JSON.stringify({ zoom, panX, panY, currentView }));
+      localStorage.setItem(VIEW_STATE_KEY, JSON.stringify({
+        zoom, panX, panY, currentView,
+        currentReportSheet: typeof currentReportSheet !== 'undefined' ? currentReportSheet : undefined,
+        currentReportMonth: typeof currentReportMonth !== 'undefined' ? currentReportMonth : undefined,
+        currentCreoDay: typeof currentCreoDay !== 'undefined' ? currentCreoDay : undefined,
+        currentCampDay: typeof currentCampDay !== 'undefined' ? currentCampDay : undefined
+      }));
     }catch(e){ /* private browsing or storage disabled — just skip persistence */ }
   }
   const savedView = loadViewState();
@@ -226,6 +232,7 @@
       fanpageView.style.display='block';
     }else if(currentView === 'report'){
       setActiveTab('tabReportBtn');
+      setActiveSheetTab(currentReportSheet);
       reportView.style.display='block';
     }else{
       boardOuter.style.display='flex';
@@ -379,7 +386,7 @@
   // "that edit is safely on the server". If it discovers something new, it adopts it and re-saves.
   let syncing = false;
   async function backgroundSync(){
-    if(syncing || pendingSaves > 0) return;
+    if(syncing || pendingSaves > 0 || saveInFlight) return;
     syncing = true;
     try{
       const res = await fetch('/api/kv/' + encodeURIComponent(STORAGE_KEY), { credentials: 'include' });
@@ -388,7 +395,11 @@
         const remote = JSON.parse(data.value);
         const changed = applyRemoteMerge(remote);
         if(changed){
-          await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
+          // Route through the SAME single-flight save gate as every other save — never call
+          // window.storage.set directly here. A direct call could run concurrently with a save
+          // the user's own edit just triggered, and whichever request's response happens to
+          // arrive at the server last would win, silently reverting the other.
+          saveState(true);
           render();
         }
       }
@@ -1586,8 +1597,8 @@
 
   // ---------- REPORT VIEW (Отчётность) ----------
   const REPORT_SHEETS = ['spendRev', 'accs', 'creoChecker', 'campaign', 'geoCipher']; // more sheets get added here later, one at a time
-  let currentReportSheet = 'spendRev';
-  let currentReportMonth = null; // 'YYYY-MM'
+  let currentReportSheet = (savedView && savedView.currentReportSheet) ? savedView.currentReportSheet : 'spendRev';
+  let currentReportMonth = (savedView && savedView.currentReportMonth) ? savedView.currentReportMonth : null; // 'YYYY-MM'
 
   const MONTH_NAMES = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
   const DOW_NAMES = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
@@ -1738,16 +1749,19 @@
   document.getElementById('reportPrevMonth').addEventListener('click', safe(()=>{
     currentReportMonth = shiftMonth(currentReportMonth || defaultMonthKey(), -1);
     document.getElementById('reportMonthLabel').textContent = monthKeyToLabel(currentReportMonth);
+    saveViewState();
     renderReportTable();
   }));
   document.getElementById('reportNextMonth').addEventListener('click', safe(()=>{
     currentReportMonth = shiftMonth(currentReportMonth || defaultMonthKey(), 1);
     document.getElementById('reportMonthLabel').textContent = monthKeyToLabel(currentReportMonth);
+    saveViewState();
     renderReportTable();
   }));
   document.getElementById('reportTodayBtn').addEventListener('click', safe(()=>{
     currentReportMonth = defaultMonthKey();
     document.getElementById('reportMonthLabel').textContent = monthKeyToLabel(currentReportMonth);
+    saveViewState();
     renderReportTable();
   }));
   function setActiveSheetTab(sheet){
@@ -1760,26 +1774,31 @@
   document.getElementById('sheetSpendRevBtn').addEventListener('click', safe(()=>{
     currentReportSheet = 'spendRev';
     setActiveSheetTab('spendRev');
+    saveViewState();
     renderReportView();
   }));
   document.getElementById('sheetAccsBtn').addEventListener('click', safe(()=>{
     currentReportSheet = 'accs';
     setActiveSheetTab('accs');
+    saveViewState();
     renderReportView();
   }));
   document.getElementById('sheetCreoBtn').addEventListener('click', safe(()=>{
     currentReportSheet = 'creoChecker';
     setActiveSheetTab('creoChecker');
+    saveViewState();
     renderReportView();
   }));
   document.getElementById('sheetCampaignBtn').addEventListener('click', safe(()=>{
     currentReportSheet = 'campaign';
     setActiveSheetTab('campaign');
+    saveViewState();
     renderReportView();
   }));
   document.getElementById('sheetGeoCipherBtn').addEventListener('click', safe(()=>{
     currentReportSheet = 'geoCipher';
     setActiveSheetTab('geoCipher');
+    saveViewState();
     renderReportView();
   }));
 
@@ -2306,7 +2325,7 @@
   const CREO_STAT_FIELDS = ['spend','uniqClick','cpuc','leads','cpl','reg','cpr','purch','cfd','rev','profit','roi'];
   const CREO_STAT_LABELS = { spend:'Spend', uniqClick:'Uniq click', cpuc:'Cpuc', leads:'Leads', cpl:'Cpl', reg:'Reg', cpr:'Cpr', purch:'Purch', cfd:'C.FD', rev:'Rev', profit:'Profit', roi:'Roi' };
   let collapsedCreoGroups = new Set();
-  let currentCreoDay = null; // 'YYYY-MM-DD'
+  let currentCreoDay = (savedView && savedView.currentCreoDay) ? savedView.currentCreoDay : null; // 'YYYY-MM-DD'
 
   function fmtDM(dateStr){
     if(!dateStr) return '';
@@ -2812,6 +2831,7 @@
   document.getElementById('addGeoBtn').addEventListener('click', safe(()=>openCreoGeoEditor(null)));
   document.getElementById('creoPrevDay').addEventListener('click', safe(()=>{
     currentCreoDay = subOneDay(currentCreoDay || todayStr());
+    saveViewState();
     renderCreoView();
   }));
   document.getElementById('creoNextDay').addEventListener('click', safe(()=>{
@@ -2819,10 +2839,12 @@
     // is created (empty) the moment you look at it
     currentCreoDay = addOneDay(currentCreoDay || todayStr());
     ensureCreoDay(currentCreoDay);
+    saveViewState();
     renderCreoView();
   }));
   document.getElementById('creoTodayBtn').addEventListener('click', safe(()=>{
     currentCreoDay = todayStr();
+    saveViewState();
     renderCreoView();
   }));
   ['creoSearch','creoGeoFilter','creoOsFilter'].forEach(id=>{
@@ -2841,7 +2863,7 @@
     paused: { label: 'Пауза',   color: 'var(--amber)' }
   };
   let collapsedCampGroups = new Set();
-  let currentCampDay = null;
+  let currentCampDay = (savedView && savedView.currentCampDay) ? savedView.currentCampDay : null;
 
   function campData(){
     ensureReportsShape();
@@ -3298,15 +3320,18 @@
   document.getElementById('addCampGeoBtn').addEventListener('click', safe(()=>openCampGeoEditor(null)));
   document.getElementById('campPrevDay').addEventListener('click', safe(()=>{
     currentCampDay = subOneDay(currentCampDay || todayStr());
+    saveViewState();
     renderCampaignView();
   }));
   document.getElementById('campNextDay').addEventListener('click', safe(()=>{
     currentCampDay = addOneDay(currentCampDay || todayStr());
     ensureCampDay(currentCampDay);
+    saveViewState();
     renderCampaignView();
   }));
   document.getElementById('campTodayBtn').addEventListener('click', safe(()=>{
     currentCampDay = todayStr();
+    saveViewState();
     renderCampaignView();
   }));
   ['campSearch','campGeoFilter','campStatusFilter'].forEach(id=>{
