@@ -335,6 +335,7 @@
 
   let saveTimer = null;
   let pendingSaves = 0;
+  let saveQueue = Promise.resolve();
   function saveState(immediate){
     clearTimeout(saveTimer);
     saveTimer = null;
@@ -353,7 +354,13 @@
         updateSaveIndicator();
       }
     };
-    if(immediate){ doSave(); } else { saveTimer = setTimeout(()=>{ saveTimer = null; doSave(); }, 350); }
+    // Chain through a single queue: rapid consecutive saves (e.g. creating several things back
+    // to back) must reach the server in the same order they were made. Firing them in parallel
+    // lets slower and faster requests finish out of order over the network, so an OLDER save can
+    // land after a newer one and silently overwrite it — exactly the "works, then reload loses
+    // some of it" symptom. Queuing guarantees each save only starts once the previous one lands.
+    const runQueued = () => { saveQueue = saveQueue.then(doSave, doSave); };
+    if(immediate){ runQueued(); } else { saveTimer = setTimeout(()=>{ saveTimer = null; runQueued(); }, 350); }
   }
 
   // Background reconciliation with whatever other open tabs/people have saved — runs on its own
