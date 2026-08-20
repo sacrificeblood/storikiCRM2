@@ -335,32 +335,43 @@
 
   let saveTimer = null;
   let pendingSaves = 0;
-  let saveQueue = Promise.resolve();
+  let saveInFlight = false;
+  let saveAgainNeeded = false;
+
+  async function flushSave(){
+    if(saveInFlight){
+      // A save is already on the wire. Don't start a second one in parallel (that's what caused
+      // out-of-order arrivals before) — just remember that whatever state exists once this one
+      // finishes still needs to go out, and let the finally-block below fire exactly one more.
+      saveAgainNeeded = true;
+      return;
+    }
+    saveInFlight = true;
+    pendingSaves++;
+    updateSaveIndicator();
+    try{
+      const result = await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
+      if(!result){ showToast('Не удалось сохранить данные'); }
+    }catch(e){
+      showToast('Ошибка сохранения: ' + (e.message||e));
+    }finally{
+      pendingSaves = Math.max(0, pendingSaves - 1);
+      updateSaveIndicator();
+      saveInFlight = false;
+      if(saveAgainNeeded){
+        saveAgainNeeded = false;
+        flushSave(); // one follow-up save, capturing everything that piled up meanwhile
+      }
+    }
+  }
+
   function saveState(immediate){
     clearTimeout(saveTimer);
     saveTimer = null;
-    const doSave = async () => {
-      pendingSaves++;
-      updateSaveIndicator();
-      try{
-        // Save FIRST, immediately, with nothing in front of it — this is the request that must
-        // survive a page refresh, so it can't be delayed behind any other network round trip.
-        const result = await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
-        if(!result){ showToast('Не удалось сохранить данные'); }
-      }catch(e){
-        showToast('Ошибка сохранения: ' + (e.message||e));
-      }finally{
-        pendingSaves = Math.max(0, pendingSaves - 1);
-        updateSaveIndicator();
-      }
-    };
-    // Chain through a single queue: rapid consecutive saves (e.g. creating several things back
-    // to back) must reach the server in the same order they were made. Firing them in parallel
-    // lets slower and faster requests finish out of order over the network, so an OLDER save can
-    // land after a newer one and silently overwrite it — exactly the "works, then reload loses
-    // some of it" symptom. Queuing guarantees each save only starts once the previous one lands.
-    const runQueued = () => { saveQueue = saveQueue.then(doSave, doSave); };
-    if(immediate){ runQueued(); } else { saveTimer = setTimeout(()=>{ saveTimer = null; runQueued(); }, 350); }
+    // Never more than one request in flight, and a burst of rapid edits (create 10 things back
+    // to back) collapses into at most two network round trips instead of ten — the one already
+    // in flight, plus a single follow-up that picks up everything that happened while it was out.
+    if(immediate){ flushSave(); } else { saveTimer = setTimeout(()=>{ saveTimer = null; flushSave(); }, 350); }
   }
 
   // Background reconciliation with whatever other open tabs/people have saved — runs on its own
