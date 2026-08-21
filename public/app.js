@@ -2817,7 +2817,10 @@
           creatives.forEach(c => {
             const os = CREO_OS[c.os] || CREO_OS.all;
             const st = CREO_STATUS[c.status] || CREO_STATUS.active;
-            const profitColor = pnlColor(Number(c.profit)||0);
+            const spend = Number(c.spend)||0, rev = Number(c.rev)||0;
+            const profit = rev - spend;
+            const roi = spend > 0 ? (profit / spend * 100) : 0;
+            const profitColor = pnlColor(profit);
             html += `<tr data-creative-id="${c.id}">
               <td><strong>${escapeHtml(c.name||'—')}</strong></td>
               <td>${escapeHtml(fmtDM(c.firstSeenDate) || '—')}</td>
@@ -2836,8 +2839,8 @@
               <td>${fmtStat(c.purch,false)}</td>
               <td>${fmtStat(c.cfd,true)}</td>
               <td>${fmtStat(c.rev,true)}</td>
-              <td style="color:${profitColor}; font-weight:700;">${fmtStat(c.profit,true)}</td>
-              <td style="color:${profitColor}; font-weight:700;">${(Number(c.roi)||0).toFixed(1)}%</td>
+              <td style="color:${profitColor}; font-weight:700;">${fmtStat(profit,true)}</td>
+              <td style="color:${profitColor}; font-weight:700;">${roi.toFixed(1)}%</td>
               <td>
                 <button type="button" class="creo-paste-btn paste-stats-btn" data-creative-id="${c.id}">📋 Вставить</button>
                 <button type="button" class="accs-mini-btn transfer-day-btn" data-creative-id="${c.id}" title="Перенести на следующий день">→ на завтра</button>
