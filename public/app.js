@@ -2436,6 +2436,12 @@
     const nums = matches.slice(0,12).map(s => parseFloat(s.replace(',', '.')));
     const result = {};
     CREO_STAT_FIELDS.forEach((f,i)=>{ result[f] = nums[i]; });
+    // Profit and ROI are always derived from Spend/Rev ourselves — never trusted from the pasted
+    // text. If the source spreadsheet's formula was wrong for a particular row (e.g. a row with
+    // zero purchases showing a positive "profit" it shouldn't), we'd otherwise just repeat that
+    // mistake here instead of fixing it.
+    result.profit = result.rev - result.spend;
+    result.roi = result.spend > 0 ? (result.profit / result.spend * 100) : 0;
     return result;
   }
 
