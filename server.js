@@ -6,22 +6,21 @@ const { pool, initSchema } = require('./db');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json({ limit: '3mb' }));
+app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Quick way to check from a browser whether the database is actually reachable:
 // just open https://your-site/api/health
 app.get('/api/health', async (req, res) => {
   try{
-    const result = await pool.query('SELECT NOW() as now, (SELECT count(*) FROM board_state) as keys');
-    res.json({ ok: true, db: 'connected', serverTime: result.rows[0].now, savedKeys: Number(result.rows[0].keys) });
+    const result = await pool.query('SELECT NOW() as now, (SELECT count(*) FROM entities) as entities');
+    res.json({ ok: true, db: 'connected', serverTime: result.rows[0].now, entityCount: Number(result.rows[0].entities) });
   }catch(e){
     res.status(500).json({ ok: false, db: 'error', error: e.message });
   }
 });
 
 const ACTIVITY_LOG_LIMIT = 300;
-
 async function logActivity(action){
   try{
     await pool.query('INSERT INTO activity_log (user_email, action) VALUES ($1,$2)', ['team', action]);
@@ -31,46 +30,34 @@ async function logActivity(action){
        )`,
       [ACTIVITY_LOG_LIMIT]
     );
-  }
-  catch(e){ console.error('activity log failed', e.message); }
+  }catch(e){ console.error('activity log failed', e.message); }
 }
 
-const HISTORY_LIMIT = 30;
-const HISTORY_MIN_GAP_MS = 2 * 60 * 1000; // don't snapshot more than once per 2 minutes per key
+// ---------- ENTITIES: one row per fanpage / creative / account / campaign / etc ----------
+// Every entity is saved and deleted INDEPENDENTLY of every other entity — there is no shared
+// document to overwrite, so two people editing different things (or the same person editing
+// quickly) can never clobber each other's work the way a single-blob save could.
 
-app.put('/api/kv/:key', async (req, res) => {
+app.get('/api/entities', async (req, res) => {
   try{
-    const { value } = req.body || {};
-    if(typeof value !== 'string') return res.status(400).json({ error: 'value must be a string' });
+    const result = await pool.query('SELECT id, type, data, updated_at FROM entities');
+    res.json({ entities: result.rows });
+  }catch(e){
+    console.error(e);
+    res.status(500).json({ error: 'DB error: ' + e.message });
+  }
+});
 
-    // archive whatever is currently stored before overwriting it — this is what makes
-    // "Восстановить из бэкапа" possible even if a save silently races a page refresh.
-    // Throttled: frequent small edits (dragging a card, etc.) within the same short window
-    // collapse into a single checkpoint instead of eating up all the history slots.
-    const existing = await pool.query('SELECT value FROM board_state WHERE key=$1', [req.params.key]);
-    if(existing.rows.length && existing.rows[0].value !== value){
-      const lastSnap = await pool.query(
-        'SELECT saved_at FROM board_state_history WHERE key=$1 ORDER BY saved_at DESC LIMIT 1',
-        [req.params.key]
-      );
-      const lastSnapAge = lastSnap.rows.length ? Date.now() - new Date(lastSnap.rows[0].saved_at).getTime() : Infinity;
-      if(lastSnapAge > HISTORY_MIN_GAP_MS){
-        await pool.query('INSERT INTO board_state_history (key, value) VALUES ($1,$2)', [req.params.key, existing.rows[0].value]);
-        await pool.query(
-          `DELETE FROM board_state_history WHERE key=$1 AND id NOT IN (
-             SELECT id FROM board_state_history WHERE key=$1 ORDER BY saved_at DESC LIMIT $2
-           )`,
-          [req.params.key, HISTORY_LIMIT]
-        );
-      }
-    }
-
+app.put('/api/entities/:type/:id', async (req, res) => {
+  try{
+    const { type, id } = req.params;
+    const data = req.body;
+    if(typeof data !== 'object' || data === null) return res.status(400).json({ error: 'body must be a JSON object' });
     await pool.query(
-      `INSERT INTO board_state (key, value, updated_at) VALUES ($1,$2, now())
-       ON CONFLICT (key) DO UPDATE SET value=$2, updated_at=now()`,
-      [req.params.key, value]
+      `INSERT INTO entities (id, type, data, updated_at) VALUES ($1,$2,$3, now())
+       ON CONFLICT (id) DO UPDATE SET type=$2, data=$3, updated_at=now()`,
+      [id, type, JSON.stringify(data)]
     );
-    logActivity('updated ' + req.params.key);
     res.json({ ok: true });
   }catch(e){
     console.error(e);
@@ -78,62 +65,66 @@ app.put('/api/kv/:key', async (req, res) => {
   }
 });
 
-// list recent backups for a key (lightweight — no value, just timestamps + size)
-app.get('/api/kv/:key/history', async (req, res) => {
+app.delete('/api/entities/:type/:id', async (req, res) => {
   try{
-    const result = await pool.query(
-      'SELECT id, saved_at, length(value) as size FROM board_state_history WHERE key=$1 ORDER BY saved_at DESC LIMIT $2',
-      [req.params.key, HISTORY_LIMIT]
-    );
+    await pool.query('DELETE FROM entities WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  }catch(e){
+    console.error(e);
+    res.status(500).json({ error: 'DB error: ' + e.message });
+  }
+});
+
+// Bulk import — used once by the client-side migration to move data out of the old
+// single-blob format. Also handy for restoring from an export.
+app.post('/api/entities/bulk', async (req, res) => {
+  const items = req.body && req.body.items;
+  if(!Array.isArray(items)) return res.status(400).json({ error: 'body must be { items: [...] }' });
+  const client = await pool.connect();
+  try{
+    await client.query('BEGIN');
+    for(const item of items){
+      if(!item || !item.id || !item.type) continue;
+      await client.query(
+        `INSERT INTO entities (id, type, data, updated_at) VALUES ($1,$2,$3, now())
+         ON CONFLICT (id) DO UPDATE SET type=$2, data=$3, updated_at=now()`,
+        [item.id, item.type, JSON.stringify(item.data || {})]
+      );
+    }
+    await client.query('COMMIT');
+    logActivity('bulk imported ' + items.length + ' entities');
+    res.json({ ok: true, count: items.length });
+  }catch(e){
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: 'DB error: ' + e.message });
+  }finally{
+    client.release();
+  }
+});
+
+// ---------- TRASH: deleted items, kept for "История" restore ----------
+
+app.get('/api/trash', async (req, res) => {
+  try{
+    const result = await pool.query('SELECT id, type, data, label, deleted_at FROM trash ORDER BY deleted_at DESC LIMIT 200');
     res.json({ entries: result.rows });
   }catch(e){
     res.status(500).json({ error: 'DB error: ' + e.message });
   }
 });
 
-// fetch the full value of one specific backup (for preview or manual recovery)
-app.get('/api/kv/:key/history/:historyId', async (req, res) => {
+app.post('/api/trash', async (req, res) => {
   try{
-    const result = await pool.query(
-      'SELECT value, saved_at FROM board_state_history WHERE key=$1 AND id=$2',
-      [req.params.key, req.params.historyId]
-    );
-    if(!result.rows.length) return res.status(404).json({ error: 'not found' });
-    res.json({ value: result.rows[0].value, savedAt: result.rows[0].saved_at });
-  }catch(e){
-    res.status(500).json({ error: 'DB error: ' + e.message });
-  }
-});
-
-// restore a backup as the current value (archives the current value first, same as a normal save)
-app.post('/api/kv/:key/restore/:historyId', async (req, res) => {
-  try{
-    const snap = await pool.query(
-      'SELECT value FROM board_state_history WHERE key=$1 AND id=$2',
-      [req.params.key, req.params.historyId]
-    );
-    if(!snap.rows.length) return res.status(404).json({ error: 'backup not found' });
-
-    const existing = await pool.query('SELECT value FROM board_state WHERE key=$1', [req.params.key]);
-    if(existing.rows.length){
-      await pool.query('INSERT INTO board_state_history (key, value) VALUES ($1,$2)', [req.params.key, existing.rows[0].value]);
-    }
+    const { id, type, data, label } = req.body || {};
+    if(!id || !type) return res.status(400).json({ error: 'id and type required' });
     await pool.query(
-      `INSERT INTO board_state (key, value, updated_at) VALUES ($1,$2, now())
-       ON CONFLICT (key) DO UPDATE SET value=$2, updated_at=now()`,
-      [req.params.key, snap.rows[0].value]
+      `INSERT INTO trash (id, type, data, label, deleted_at) VALUES ($1,$2,$3,$4, now())
+       ON CONFLICT (id) DO UPDATE SET type=$2, data=$3, label=$4, deleted_at=now()`,
+      [id, type, JSON.stringify(data || {}), label || '']
     );
-    logActivity('restored backup for ' + req.params.key);
-    res.json({ ok: true, value: snap.rows[0].value });
-  }catch(e){
-    res.status(500).json({ error: 'DB error: ' + e.message });
-  }
-});
-
-app.delete('/api/kv/:key', async (req, res) => {
-  try{
-    await pool.query('DELETE FROM board_state WHERE key=$1', [req.params.key]);
-    logActivity('deleted ' + req.params.key);
+    // keep only the most recent 200 trash entries so this table never grows unbounded
+    await pool.query(`DELETE FROM trash WHERE id NOT IN (SELECT id FROM trash ORDER BY deleted_at DESC LIMIT 200)`);
     res.json({ ok: true });
   }catch(e){
     console.error(e);
@@ -141,24 +132,52 @@ app.delete('/api/kv/:key', async (req, res) => {
   }
 });
 
-app.get('/api/kv', async (req, res) => {
+app.delete('/api/trash/:id', async (req, res) => {
   try{
-    const prefix = req.query.prefix || '';
-    const result = await pool.query('SELECT key FROM board_state WHERE key LIKE $1', [prefix + '%']);
-    res.json({ keys: result.rows.map(r => r.key) });
+    await pool.query('DELETE FROM trash WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
   }catch(e){
-    console.error(e);
     res.status(500).json({ error: 'DB error: ' + e.message });
   }
 });
 
+// restore = move a trash row back into entities, then remove it from trash
+app.post('/api/trash/:id/restore', async (req, res) => {
+  const client = await pool.connect();
+  try{
+    await client.query('BEGIN');
+    const found = await client.query('SELECT id, type, data FROM trash WHERE id=$1', [req.params.id]);
+    if(!found.rows.length){
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'trash entry not found' });
+    }
+    const { id, type, data } = found.rows[0];
+    await client.query(
+      `INSERT INTO entities (id, type, data, updated_at) VALUES ($1,$2,$3, now())
+       ON CONFLICT (id) DO UPDATE SET type=$2, data=$3, updated_at=now()`,
+      [id, type, JSON.stringify(data)]
+    );
+    await client.query('DELETE FROM trash WHERE id=$1', [req.params.id]);
+    await client.query('COMMIT');
+    logActivity('restored ' + type + ' ' + id);
+    res.json({ ok: true, type, data });
+  }catch(e){
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: 'DB error: ' + e.message });
+  }finally{
+    client.release();
+  }
+});
+
+// ---------- LEGACY: read-only access to the old single-blob storage, kept only so the
+// one-time client-side migration can pull the old data out. Nothing writes here anymore. ----------
 app.get('/api/kv/:key', async (req, res) => {
   try{
     const result = await pool.query('SELECT value FROM board_state WHERE key=$1', [req.params.key]);
     if(!result.rows.length) return res.status(404).json({ error: 'not found' });
     res.json({ value: result.rows[0].value });
   }catch(e){
-    console.error(e);
     res.status(500).json({ error: 'DB error: ' + e.message });
   }
 });

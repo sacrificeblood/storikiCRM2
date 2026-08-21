@@ -11,6 +11,34 @@ const pool = new Pool({
 });
 
 async function initSchema(){
+  // Every fanpage, creative, link, account, campaign, geo, etc. is its own row here.
+  // Saving one entity is a single UPDATE on a single row — it can never collide with,
+  // race against, or overwrite a save of a DIFFERENT entity, unlike the old single-blob design.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS entities (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      data JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_entities_type ON entities (type);`);
+
+  // Deleted items live here for the "История" (trash/restore) feature.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS trash (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      data JSONB NOT NULL,
+      label TEXT,
+      deleted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_trash_deleted_at ON trash (deleted_at DESC);`);
+
+  // Legacy single-blob storage — kept only so the one-time migration endpoint can read
+  // whatever the old version last saved. Nothing new is written here going forward.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS board_state (
       key TEXT PRIMARY KEY,
@@ -19,15 +47,7 @@ async function initSchema(){
       updated_by TEXT
     );
   `);
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS board_state_history (
-      id SERIAL PRIMARY KEY,
-      key TEXT NOT NULL,
-      value TEXT NOT NULL,
-      saved_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_history_key_time ON board_state_history (key, saved_at DESC);`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS activity_log (
       id SERIAL PRIMARY KEY,
