@@ -749,10 +749,10 @@
     const trashId = type + ':' + cleanData.id;
     state.deletedItems.unshift({ id: trashId, type, data: cleanData, label, deletedAt: Date.now() });
     if(state.deletedItems.length > MAX_TRASH) state.deletedItems.length = MAX_TRASH;
-    // The entity is already gone from the relevant state array by the time this is called, so it
-    // won't be in the next flattenState() pass — but make sure a save that was already mid-flight
-    // (built from an older snapshot) can't resurrect it by racing the trash write.
-    lastSavedSnapshot.delete(trashId);
+    // Do NOT touch lastSavedSnapshot here — the entity is already gone from state.X by now, so
+    // the very next flushSave() will correctly diff that against the snapshot and fire a real
+    // DELETE for it. Deleting it from the snapshot early (as before) hid it from that diff
+    // entirely, so the row never actually got removed from the server — only added to trash.
     window.entitiesApi.pushTrash(trashId, type, cleanData, label).catch(e=>{
       console.error('trash push failed', e);
       showErrorBanner('Не удалось сохранить в историю удалений: ' + (e.message||e));
