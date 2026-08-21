@@ -156,71 +156,237 @@
     }
   }
 
+  // ---------- ENTITY FLATTEN / RECONSTRUCT ----------
+  // The UI works with the same nested `state` shape it always has (state.fanpages,
+  // state.reports.accs.agents, etc). Underneath, every save/load talks to the server as a flat
+  // list of independent {id, type, data} rows — one row per fanpage, per account, per campaign,
+  // per day-entry. Saving one thing can never overwrite a DIFFERENT thing anymore.
+  function flattenState(){
+    const items = [];
+    const push = (type, obj, extra) => { items.push({ id: type+':'+obj.id, type, key: obj.id, data: extra ? {...obj, ...extra} : obj }); };
+
+    (state.layers||[]).forEach(x => push('layer', x));
+    (state.fanpages||[]).forEach(x => push('fan', x));
+    (state.creatives||[]).forEach(x => push('cre', x));
+    (state.links||[]).forEach(x => push('link', x));
+    (state.fanpageRegistry||[]).forEach(x => push('freg', x));
+
+    const spendRev = (state.reports && state.reports.spendRev) || {};
+    Object.keys(spendRev).forEach(monthKey => {
+      Object.keys(spendRev[monthKey]||{}).forEach(day => {
+        const key = monthKey + '_' + day;
+        items.push({ id: 'spendRevDay:'+key, type: 'spendRevDay', key, data: { monthKey, day, ...spendRev[monthKey][day] } });
+      });
+    });
+
+    const accs = (state.reports && state.reports.accs) || {};
+    (accs.agents||[]).forEach(x => push('accagent', x));
+    (accs.socs||[]).forEach(x => push('accsoc', x));
+    (accs.accounts||[]).forEach(x => push('acc', x));
+
+    const creoDays = (state.reports && state.reports.creoChecker && state.reports.creoChecker.days) || {};
+    Object.keys(creoDays).forEach(dayKey => {
+      (creoDays[dayKey].geos||[]).forEach(g => push('creogeo', g, { dayKey }));
+      (creoDays[dayKey].creatives||[]).forEach(c => push('creocreative', c, { dayKey }));
+    });
+
+    const campDays = (state.reports && state.reports.campaign && state.reports.campaign.days) || {};
+    Object.keys(campDays).forEach(dayKey => {
+      (campDays[dayKey].geos||[]).forEach(g => push('campgeo', g, { dayKey }));
+      (campDays[dayKey].campaigns||[]).forEach(c => push('campcampaign', c, { dayKey }));
+    });
+
+    ((state.reports && state.reports.geoCipher) || []).forEach(x => push('geocipher', x));
+
+    return items;
+  }
+
+  function applyFlatEntities(items){
+    const byType = {};
+    items.forEach(it => { (byType[it.type] = byType[it.type]||[]).push(it.data); });
+
+    state.layers = byType.layer || [];
+    state.fanpages = byType.fan || [];
+    state.creatives = byType.cre || [];
+    state.links = (byType.link || []).map(l=>{
+      if(l.postUrl){ l.postUrls = [l.postUrl]; delete l.postUrl; }
+      l.postUrls = normalizePostUrls(l.postUrls);
+      if(!l.createdAt) l.createdAt = Date.now();
+      return l;
+    });
+    state.fanpageRegistry = byType.freg || [];
+
+    state.reports = {};
+    state.reports.spendRev = {};
+    (byType.spendRevDay||[]).forEach(d => {
+      if(!state.reports.spendRev[d.monthKey]) state.reports.spendRev[d.monthKey] = {};
+      state.reports.spendRev[d.monthKey][d.day] = { spend: d.spend||0, revenue: d.revenue||0 };
+    });
+
+    state.reports.accs = {
+      agents: byType.accagent || [],
+      socs: byType.accsoc || [],
+      accounts: byType.acc || []
+    };
+
+    state.reports.creoChecker = { days: {} };
+    (byType.creogeo||[]).forEach(g => {
+      const dayKey = g.dayKey; const gg = {...g}; delete gg.dayKey;
+      if(!state.reports.creoChecker.days[dayKey]) state.reports.creoChecker.days[dayKey] = { geos:[], creatives:[] };
+      state.reports.creoChecker.days[dayKey].geos.push(gg);
+    });
+    (byType.creocreative||[]).forEach(c => {
+      const dayKey = c.dayKey; const cc = {...c}; delete cc.dayKey;
+      if(!state.reports.creoChecker.days[dayKey]) state.reports.creoChecker.days[dayKey] = { geos:[], creatives:[] };
+      state.reports.creoChecker.days[dayKey].creatives.push(cc);
+    });
+
+    state.reports.campaign = { days: {} };
+    (byType.campgeo||[]).forEach(g => {
+      const dayKey = g.dayKey; const gg = {...g}; delete gg.dayKey;
+      if(!state.reports.campaign.days[dayKey]) state.reports.campaign.days[dayKey] = { geos:[], campaigns:[] };
+      state.reports.campaign.days[dayKey].geos.push(gg);
+    });
+    (byType.campcampaign||[]).forEach(c => {
+      const dayKey = c.dayKey; const cc = {...c}; delete cc.dayKey;
+      if(!state.reports.campaign.days[dayKey]) state.reports.campaign.days[dayKey] = { geos:[], campaigns:[] };
+      state.reports.campaign.days[dayKey].campaigns.push(cc);
+    });
+
+    state.reports.geoCipher = byType.geocipher || [];
+  }
+
+  function snapshotFlat(items){
+    const m = new Map();
+    items.forEach(it => m.set(it.id, { type: it.type, key: it.key, json: JSON.stringify(it.data) }));
+    return m;
+  }
+  let lastSavedSnapshot = new Map();
+
+  // one-time migration: read whatever the OLD single-blob version last saved, and turn it into
+  // the same flat {id,type,data} shape the new entities API expects
+  function migrateLegacyBlob(parsed){
+    const items = [];
+    const trash = [];
+    const push = (type, obj, extra) => { if(obj && obj.id) items.push({ id: type+':'+obj.id, type, data: extra ? {...obj, ...extra} : obj }); };
+
+    (parsed.layers||[]).forEach(x => push('layer', x));
+    let fanpages = parsed.fanpages || [];
+    (parsed.creatives||[]).forEach(x => push('cre', x));
+    (parsed.links||[]).forEach(l=>{
+      if(l.postUrl){ l.postUrls = [l.postUrl]; delete l.postUrl; }
+      l.postUrls = normalizePostUrls(l.postUrls);
+      if(!l.createdAt) l.createdAt = Date.now();
+      push('link', l);
+    });
+
+    let fanpageRegistry = Array.isArray(parsed.fanpageRegistry) ? parsed.fanpageRegistry : null;
+    if(!fanpageRegistry){
+      fanpageRegistry = fanpages
+        .filter(f => f.geo || f.gender || (f.status && f.status !== 'inactive') || f.pageUrl)
+        .map(f => ({ id: uid(), name: f.name, geo: f.geo||'', gender: f.gender||'', status: f.status||'inactive', pageUrl: f.pageUrl||'', createdAt: Date.now() }));
+      fanpages = fanpages.map(f=>{ const c={...f}; delete c.geo; delete c.gender; delete c.status; delete c.pageUrl; return c; });
+    }
+    fanpages.forEach(x => push('fan', x));
+    fanpageRegistry.forEach(x => push('freg', x));
+
+    const reports = parsed.reports || {};
+    const spendRev = reports.spendRev || {};
+    Object.keys(spendRev).forEach(monthKey => {
+      Object.keys(spendRev[monthKey]||{}).forEach(day => {
+        items.push({ id: 'spendRevDay:'+monthKey+'_'+day, type: 'spendRevDay', data: { monthKey, day, ...spendRev[monthKey][day] } });
+      });
+    });
+
+    let accs = reports.accs;
+    if(accs && !Array.isArray(accs) && accs.agents){
+      (accs.agents||[]).forEach(x => push('accagent', x));
+      (accs.socs||[]).forEach(x => push('accsoc', x));
+      (accs.accounts||[]).forEach(x => push('acc', x));
+    }else if(Array.isArray(accs)){
+      // even older flat shape (agent/soc/adsPower/pixel per account) — best-effort migrate
+      const bucketDay = todayStr();
+      const agentIdByName = new Map(); const socIdByKey = new Map();
+      accs.forEach(rec => {
+        const agentName = rec.agent || 'Без агента';
+        let agentId = agentIdByName.get(agentName);
+        if(!agentId){ agentId = uid(); agentIdByName.set(agentName, agentId); items.push({id:'accagent:'+agentId, type:'accagent', data:{id:agentId, name:agentName}}); }
+        const socKey = agentId+'|'+(rec.soc||'')+'|'+(rec.adsPowerId||'');
+        let socId = socIdByKey.get(socKey);
+        if(!socId){
+          socId = uid(); socIdByKey.set(socKey, socId);
+          items.push({id:'accsoc:'+socId, type:'accsoc', data:{id:socId, agentId, name:rec.soc||'Без soc', adsPowerId:rec.adsPowerId||'', pixel:rec.pixel||''}});
+        }
+        const accId = rec.id || uid();
+        items.push({id:'acc:'+accId, type:'acc', data:{id:accId, socId, accId:rec.accId||'', dateIssued:rec.dateIssued||bucketDay, dateBan:rec.dateBan||'', status:rec.status||'approved', note:rec.note||''}});
+      });
+    }
+
+    const creo = reports.creoChecker;
+    if(creo && creo.days){
+      Object.keys(creo.days).forEach(dayKey => {
+        (creo.days[dayKey].geos||[]).forEach(g => push('creogeo', g, {dayKey}));
+        (creo.days[dayKey].creatives||[]).forEach(c => push('creocreative', c, {dayKey}));
+      });
+    }
+
+    const camp = reports.campaign;
+    if(camp && camp.days){
+      Object.keys(camp.days).forEach(dayKey => {
+        (camp.days[dayKey].geos||[]).forEach(g => push('campgeo', g, {dayKey}));
+        (camp.days[dayKey].campaigns||[]).forEach(c => push('campcampaign', c, {dayKey}));
+      });
+    }
+
+    (reports.geoCipher||[]).forEach(x => push('geocipher', x));
+
+    (parsed.deletedItems||[]).forEach(t => {
+      if(t && t.type && t.data && t.data.id){
+        trash.push({ id: t.type+':'+t.data.id, type: t.type, data: t.data, label: t.label||'' });
+      }
+    });
+
+    return { items, trash };
+  }
+
   async function loadState(){
     try{
-      const res = await window.storage.get(STORAGE_KEY, false);
-      if(res && res.value){
-        const parsed = JSON.parse(res.value);
-        state.layers = parsed.layers || [];
-        state.fanpages = parsed.fanpages || [];
-        state.creatives = parsed.creatives || [];
-        state.links = (parsed.links || []).map(l=>{
-          if(l.postUrl){ l.postUrls = [l.postUrl]; delete l.postUrl; }
-          l.postUrls = normalizePostUrls(l.postUrls);
-          if(!l.createdAt) l.createdAt = Date.now();
-          return l;
-        });
-        state.currentLayerId = parsed.currentLayerId || null;
-        state.deletedItems = parsed.deletedItems || [];
-        state.reports = parsed.reports || {};
-
-        if(Array.isArray(parsed.fanpageRegistry)){
-          state.fanpageRegistry = parsed.fanpageRegistry;
-        }else{
-          // one-time migration: board fanpages used to carry geo/gender/status/pageUrl —
-          // move whatever was already filled in into the new, independent registry
-          state.fanpageRegistry = state.fanpages
-            .filter(f => f.geo || f.gender || (f.status && f.status !== 'inactive') || f.pageUrl)
-            .map(f => ({
-              id: uid(), name: f.name, geo: f.geo || '', gender: f.gender || '',
-              status: f.status || 'inactive', pageUrl: f.pageUrl || '', createdAt: Date.now()
-            }));
-          state.fanpages.forEach(f=>{ delete f.geo; delete f.gender; delete f.status; delete f.pageUrl; });
-        }
-      } else {
-        // try migrating legacy single-layer data (pre-layers version)
-        try{
-          const oldRes = await window.storage.get(OLD_STORAGE_KEY, false);
-          if(oldRes && oldRes.value){
-            const old = JSON.parse(oldRes.value);
-            const defaultLayer = { id: uid(), name: 'Слой 1' };
-            state.layers = [defaultLayer];
-            state.fanpages = (old.fanpages||[]).map(f=>({...f, layerId: defaultLayer.id}));
-            state.creatives = (old.creatives||[]).map(c=>({...c, layerId: defaultLayer.id}));
-            state.links = (old.links||[]).map(l=>{
-              let urls = Array.isArray(l.postUrls) ? l.postUrls : (l.postUrl ? [l.postUrl] : []);
-              return { id:l.id, fanpageId:l.fanpageId, creativeId:l.creativeId, geo:l.geo||'', postUrls:normalizePostUrls(urls), createdAt:l.createdAt||Date.now(), layerId: defaultLayer.id };
-            });
-            state.currentLayerId = defaultLayer.id;
-            showToast('Старые данные перенесены в «Слой 1»');
+      let entities = await window.entitiesApi.loadAll();
+      if(entities.length === 0){
+        // nothing in the new storage yet — check if the OLD version left something to migrate
+        const legacy = await window.entitiesApi.legacyGet(STORAGE_KEY);
+        if(legacy){
+          try{
+            const migrated = migrateLegacyBlob(JSON.parse(legacy));
+            if(migrated.items.length){
+              await window.entitiesApi.bulkImport(migrated.items);
+              for(const t of migrated.trash){
+                try{ await window.entitiesApi.pushTrash(t.id, t.type, t.data, t.label); }catch(e2){ console.error('trash migrate failed', e2); }
+              }
+              showToast('Старые данные перенесены в новое хранилище');
+              entities = await window.entitiesApi.loadAll();
+            }
+          }catch(e2){
+            console.error('legacy migration failed', e2);
+            showErrorBanner('Не удалось перенести старые данные: ' + (e2.message||e2));
           }
-        }catch(e2){ /* nothing to migrate */ }
+        }
       }
+      applyFlatEntities(entities);
+      lastSavedSnapshot = snapshotFlat(flattenState());
+
+      const trashEntries = await window.entitiesApi.loadTrash();
+      state.deletedItems = trashEntries.map(t => ({
+        id: t.id, type: t.type, data: t.data, label: t.label,
+        deletedAt: t.deleted_at ? new Date(t.deleted_at).getTime() : Date.now()
+      }));
     }catch(e){
-      // nothing saved yet
+      console.error('load failed', e);
+      showErrorBanner('Не удалось загрузить данные: ' + (e.message||e));
     }
-    // any fanpage/creative/link missing a layerId (older partial saves) gets bucketed into a default layer
-    const orphanFan = state.fanpages.filter(f=>!f.layerId);
-    const orphanCre = state.creatives.filter(c=>!c.layerId);
-    const orphanLink = state.links.filter(l=>!l.layerId);
-    if(orphanFan.length || orphanCre.length || orphanLink.length){
-      let bucket = state.layers[0];
-      if(!bucket){ bucket = { id: uid(), name: 'Слой 1' }; state.layers.push(bucket); }
-      orphanFan.forEach(f=>f.layerId=bucket.id);
-      orphanCre.forEach(c=>c.layerId=bucket.id);
-      orphanLink.forEach(l=>l.layerId=bucket.id);
-    }
+
     ensureAtLeastOneLayer();
+    state.currentLayerId = state.layers[0] ? state.layers[0].id : null;
 
     loadingBox.style.display='none';
     hideAllViews();
@@ -246,98 +412,6 @@
     setupReportDelegation();
     applyTransform();
     render();
-    saveState(true);
-  }
-
-  function mergeEntityArray(localArr, remoteArr, deletedIds){
-    const map = new Map();
-    (remoteArr||[]).forEach(item => { if(item && item.id && !deletedIds.has(item.id)) map.set(item.id, item); });
-    (localArr||[]).forEach(item => { if(item && item.id && !deletedIds.has(item.id)) map.set(item.id, item); });
-    return Array.from(map.values());
-  }
-
-  // Returns true if merging in remote data actually changed anything locally.
-  function mergeReports(localReports, remoteReports){
-    const merged = JSON.parse(JSON.stringify(remoteReports || {}));
-    const localSpendRev = (localReports || {}).spendRev || {};
-    if(!merged.spendRev) merged.spendRev = {};
-    Object.keys(localSpendRev).forEach(monthKey => {
-      if(!merged.spendRev[monthKey]) merged.spendRev[monthKey] = {};
-      Object.keys(localSpendRev[monthKey]).forEach(day => {
-        merged.spendRev[monthKey][day] = localSpendRev[monthKey][day]; // local wins on same-day overlap
-      });
-    });
-    return merged;
-  }
-
-  function applyRemoteMerge(remote){
-    const before = JSON.stringify({ f: state.fanpages, c: state.creatives, r: state.fanpageRegistry, l: state.links, rep: state.reports });
-
-    const localTrash = state.deletedItems || [];
-    const remoteTrash = remote.deletedItems || [];
-    const trashById = new Map();
-    remoteTrash.forEach(t => t && t.id && trashById.set(t.id, t));
-    localTrash.forEach(t => t && t.id && trashById.set(t.id, t));
-    let mergedTrash = Array.from(trashById.values()).sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0));
-    if(mergedTrash.length > MAX_TRASH) mergedTrash = mergedTrash.slice(0, MAX_TRASH);
-    state.deletedItems = mergedTrash;
-
-    const deletedIds = new Set(mergedTrash.map(t => t.data && t.data.id).filter(Boolean));
-
-    state.fanpages = mergeEntityArray(state.fanpages, remote.fanpages, deletedIds);
-    state.creatives = mergeEntityArray(state.creatives, remote.creatives, deletedIds);
-    state.fanpageRegistry = mergeEntityArray(state.fanpageRegistry, remote.fanpageRegistry, deletedIds);
-    state.links = mergeEntityArray(state.links, remote.links, deletedIds)
-      .filter(l => state.fanpages.some(f=>f.id===l.fanpageId) && state.creatives.some(c=>c.id===l.creativeId));
-    state.reports = mergeReports(state.reports, remote.reports);
-    ensureReportsShape();
-    const remoteAccs = (remote.reports||{}).accs;
-    const remoteAccsObj = (remoteAccs && !Array.isArray(remoteAccs)) ? remoteAccs : { agents:[], socs:[], accounts:[] };
-    state.reports.accs.agents = mergeEntityArray(state.reports.accs.agents, remoteAccsObj.agents, deletedIds);
-    state.reports.accs.socs = mergeEntityArray(state.reports.accs.socs, remoteAccsObj.socs, deletedIds)
-      .filter(s => state.reports.accs.agents.some(a=>a.id===s.agentId));
-    state.reports.accs.accounts = mergeEntityArray(state.reports.accs.accounts, remoteAccsObj.accounts, deletedIds)
-      .filter(a => state.reports.accs.socs.some(s=>s.id===a.socId));
-
-    ensureReportsShape();
-    const remoteCreo = (remote.reports||{}).creoChecker || { days:{} };
-    const remoteCreoDays = (remoteCreo.days && typeof remoteCreo.days === 'object') ? remoteCreo.days : {};
-    const localCreoDays = state.reports.creoChecker.days || {};
-    const allDayKeys = new Set([...Object.keys(localCreoDays), ...Object.keys(remoteCreoDays)]);
-    allDayKeys.forEach(dayKey => {
-      const localDay = localCreoDays[dayKey] || { geos: [], creatives: [] };
-      const remoteDay = remoteCreoDays[dayKey] || { geos: [], creatives: [] };
-      const mergedGeos = mergeEntityArray(localDay.geos, remoteDay.geos, deletedIds);
-      const mergedCreatives = mergeEntityArray(localDay.creatives, remoteDay.creatives, deletedIds)
-        .filter(c => mergedGeos.some(g=>g.id===c.geoId));
-      localCreoDays[dayKey] = { geos: mergedGeos, creatives: mergedCreatives };
-    });
-    state.reports.creoChecker.days = localCreoDays;
-
-    ensureReportsShape();
-    const remoteCamp = (remote.reports||{}).campaign || { days: {} };
-    const remoteCampDays = (remoteCamp.days && typeof remoteCamp.days === 'object') ? remoteCamp.days : {};
-    const localCampDays = state.reports.campaign.days || {};
-    const allCampDayKeys = new Set([...Object.keys(localCampDays), ...Object.keys(remoteCampDays)]);
-    allCampDayKeys.forEach(dayKey => {
-      const localDay = localCampDays[dayKey] || { geos: [], campaigns: [] };
-      const remoteDay = remoteCampDays[dayKey] || { geos: [], campaigns: [] };
-      const mergedGeos = mergeEntityArray(localDay.geos, remoteDay.geos, deletedIds);
-      const mergedCamps = mergeEntityArray(localDay.campaigns, remoteDay.campaigns, deletedIds)
-        .filter(c => mergedGeos.some(g=>g.id===c.geoId));
-      localCampDays[dayKey] = { geos: mergedGeos, campaigns: mergedCamps };
-    });
-    state.reports.campaign.days = localCampDays;
-
-    state.reports.geoCipher = mergeEntityArray(state.reports.geoCipher, (remote.reports||{}).geoCipher, deletedIds);
-
-    if(Array.isArray(remote.layers)){
-      const layerIds = new Set((state.layers||[]).map(l=>l.id));
-      remote.layers.forEach(l => { if(l && l.id && !layerIds.has(l.id)) state.layers.push(l); });
-    }
-
-    const after = JSON.stringify({ f: state.fanpages, c: state.creatives, r: state.fanpageRegistry, l: state.links, rep: state.reports });
-    return before !== after;
   }
 
   let saveTimer = null;
@@ -347,32 +421,57 @@
 
   async function flushSave(){
     if(saveInFlight){
-      // A save is already on the wire. Don't start a second one in parallel (that's what caused
-      // out-of-order arrivals before) — just remember that whatever state exists once this one
-      // finishes still needs to go out, and let the finally-block below fire exactly one more.
       saveAgainNeeded = true;
       return;
     }
     saveInFlight = true;
+
+    const current = flattenState();
+    const currentMap = new Map(current.map(e => [e.id, e]));
+    const toSave = [];
+    const toDelete = [];
+    currentMap.forEach((entity, id) => {
+      const prev = lastSavedSnapshot.get(id);
+      const curJson = JSON.stringify(entity.data);
+      if(!prev || prev.json !== curJson) toSave.push(entity);
+    });
+    lastSavedSnapshot.forEach((prev, id) => {
+      if(!currentMap.has(id)) toDelete.push(prev);
+    });
+
+    if(toSave.length === 0 && toDelete.length === 0){
+      saveInFlight = false;
+      if(saveAgainNeeded){ saveAgainNeeded = false; flushSave(); }
+      return;
+    }
+
     pendingSaves++;
     updateSaveIndicator();
     try{
-      const result = await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
-      if(!result){
-        showToast('Не удалось сохранить данные');
-        showErrorBanner('Сохранение вернулось пустым результатом — данные могли не долететь до сервера. Обновите страницу и проверьте, всё ли на месте.');
+      const results = await Promise.allSettled([
+        ...toSave.map(e => window.entitiesApi.saveEntity(e.type, e.key, e.data)),
+        ...toDelete.map(e => window.entitiesApi.deleteEntity(e.type, e.key))
+      ]);
+      const failed = results.filter(r => r.status === 'rejected');
+      if(failed.length){
+        console.error('some saves failed', failed);
+        showToast('Не удалось сохранить часть изменений');
+        showErrorBanner('Часть изменений не сохранилась: ' + failed.map(f=>f.reason && f.reason.message).join('; ') + '\n\nПовторите действие через пару секунд.');
       }
+      // only mark as saved what actually succeeded
+      toSave.forEach((e,i) => { if(results[i].status === 'fulfilled') lastSavedSnapshot.set(e.id, { type:e.type, key:e.key, json: JSON.stringify(e.data) }); });
+      toDelete.forEach((e,i) => { if(results[toSave.length+i].status === 'fulfilled') lastSavedSnapshot.delete(e.type+':'+e.key); });
     }catch(e){
-      console.error('save failed:', e);
+      console.error('save failed', e);
       showToast('Ошибка сохранения: ' + (e.message||e));
-      showErrorBanner('Не удалось сохранить данные: ' + (e && e.message ? e.message : e) + '\n\nВаше последнее действие могло не сохраниться. Проверьте после исправления и повторите его.');
+      showErrorBanner('Не удалось сохранить данные: ' + (e.message||e) + '\n\nВаше последнее действие могло не сохраниться.');
     }finally{
       pendingSaves = Math.max(0, pendingSaves - 1);
       updateSaveIndicator();
       saveInFlight = false;
       if(saveAgainNeeded){
         saveAgainNeeded = false;
-        flushSave(); // one follow-up save, capturing everything that piled up meanwhile
+        flushSave();
       }
     }
   }
@@ -380,42 +479,9 @@
   function saveState(immediate){
     clearTimeout(saveTimer);
     saveTimer = null;
-    // Never more than one request in flight, and a burst of rapid edits (create 10 things back
-    // to back) collapses into at most two network round trips instead of ten — the one already
-    // in flight, plus a single follow-up that picks up everything that happened while it was out.
     if(immediate){ flushSave(); } else { saveTimer = setTimeout(()=>{ saveTimer = null; flushSave(); }, 350); }
   }
 
-  // Background reconciliation with whatever other open tabs/people have saved — runs on its own
-  // schedule (not tied to the moment of editing), so it never stands between "I made an edit" and
-  // "that edit is safely on the server". If it discovers something new, it adopts it and re-saves.
-  let syncing = false;
-  async function backgroundSync(){
-    if(syncing || pendingSaves > 0 || saveInFlight) return;
-    syncing = true;
-    try{
-      const res = await fetch('/api/kv/' + encodeURIComponent(STORAGE_KEY), { credentials: 'include' });
-      if(res.ok){
-        const data = await res.json();
-        const remote = JSON.parse(data.value);
-        const changed = applyRemoteMerge(remote);
-        if(changed){
-          // Route through the SAME single-flight save gate as every other save — never call
-          // window.storage.set directly here. A direct call could run concurrently with a save
-          // the user's own edit just triggered, and whichever request's response happens to
-          // arrive at the server last would win, silently reverting the other.
-          saveState(true);
-          render();
-        }
-      }
-    }catch(e){
-      console.error('background sync failed:', e);
-    }finally{
-      syncing = false;
-    }
-  }
-  setInterval(backgroundSync, 8000);
-  document.addEventListener('visibilitychange', () => { if(!document.hidden) backgroundSync(); });
 
   function updateSaveIndicator(){
     const el = document.getElementById('saveIndicator');
@@ -679,8 +745,18 @@
   const MAX_TRASH = 50;
   function pushToTrash(type, data, label){
     if(!Array.isArray(state.deletedItems)) state.deletedItems = [];
-    state.deletedItems.unshift({ id: uid(), type, data: JSON.parse(JSON.stringify(data)), label, deletedAt: Date.now() });
+    const cleanData = JSON.parse(JSON.stringify(data));
+    const trashId = type + ':' + cleanData.id;
+    state.deletedItems.unshift({ id: trashId, type, data: cleanData, label, deletedAt: Date.now() });
     if(state.deletedItems.length > MAX_TRASH) state.deletedItems.length = MAX_TRASH;
+    // The entity is already gone from the relevant state array by the time this is called, so it
+    // won't be in the next flattenState() pass — but make sure a save that was already mid-flight
+    // (built from an older snapshot) can't resurrect it by racing the trash write.
+    lastSavedSnapshot.delete(trashId);
+    window.entitiesApi.pushTrash(trashId, type, cleanData, label).catch(e=>{
+      console.error('trash push failed', e);
+      showErrorBanner('Не удалось сохранить в историю удалений: ' + (e.message||e));
+    });
   }
 
   function deleteNode(id, kind){
@@ -781,6 +857,11 @@
       state.reports.geoCipher.push(entry.data);
     }
     state.deletedItems = state.deletedItems.filter(t=>t.id!==trashId);
+    lastSavedSnapshot.set(trashId, { type: entry.type, key: entry.data.id, json: JSON.stringify(entry.data) });
+    window.entitiesApi.restoreTrash(trashId).catch(e=>{
+      console.error('restore failed', e);
+      showErrorBanner('Не удалось восстановить на сервере: ' + (e.message||e));
+    });
     saveState(true);
     render();
     showToast('Восстановлено');
@@ -1064,60 +1145,31 @@
   }
 
   async function openBackupsManager(){
-    const overlay = document.createElement('div');
-    overlay.className = 'overlay';
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.innerHTML = `<h3>Бэкапы</h3><p class="muted" style="font-size:12.5px;margin-top:-8px;">Сервер автоматически сохраняет предыдущую версию перед каждым изменением (последние ${30}). Можно откатиться на любую из них.</p>`;
-
-    const list = document.createElement('div');
-    list.innerHTML = '<div class="muted" style="font-size:13px; padding:10px 0;">Загрузка…</div>';
-    modal.appendChild(list);
-
-    const actions = document.createElement('div'); actions.className='modal-actions';
-    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
-    const closeBtn = document.createElement('button'); closeBtn.className='btn btn-plain'; closeBtn.textContent='Готово'; closeBtn.type='button';
-    closeBtn.addEventListener('click', ()=>document.body.removeChild(overlay));
-    actions.appendChild(closeBtn);
-    modal.appendChild(actions);
-
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
-
     try{
-      const res = await fetch('/api/kv/' + encodeURIComponent(STORAGE_KEY) + '/history', { credentials: 'include' });
-      const data = await res.json();
-      const entries = data.entries || [];
-      if(entries.length === 0){
-        list.innerHTML = '<div class="muted" style="font-size:13px; padding:10px 0;">Пока нет ни одного бэкапа — они появятся после первого изменения доски.</div>';
-        return;
-      }
-      list.innerHTML = '';
-      entries.forEach(entry => {
-        const row = document.createElement('div'); row.className='layer-row';
-        const info = document.createElement('div');
-        info.style.cssText = 'flex:1; font-size:13px;';
-        info.innerHTML = `${timeAgo(new Date(entry.saved_at).getTime())} <span class="muted" style="font-size:11px;">· ${fmtBytes(entry.size)} · ${new Date(entry.saved_at).toLocaleString('ru-RU')}</span>`;
-        row.appendChild(info);
-        const restoreBtn = document.createElement('button');
-        restoreBtn.textContent = '↺'; restoreBtn.title = 'Восстановить эту версию';
-        restoreBtn.style.cssText = 'width:28px; height:28px; border-radius:6px; border:1px solid var(--border); background:var(--panel-2); color:var(--green); cursor:pointer; font-size:15px;';
-        restoreBtn.addEventListener('click', safe(async ()=>{
-          if(!confirm('Откатить доску на состояние от ' + new Date(entry.saved_at).toLocaleString('ru-RU') + '? Текущая версия тоже сохранится в бэкапы перед откатом.')) return;
-          const r = await fetch('/api/kv/' + encodeURIComponent(STORAGE_KEY) + '/restore/' + entry.id, { method:'POST', credentials:'include' });
-          if(!r.ok){ showToast('Не удалось восстановить бэкап'); return; }
-          document.body.removeChild(overlay);
-          showToast('Восстановлено, перезагружаю доску…');
-          loadingBox.style.display = 'block';
-          loadingBox.textContent = 'Загрузка доски…';
-          location.reload();
-        }));
-        row.appendChild(restoreBtn);
-        list.appendChild(row);
-      });
+      showToast('Готовлю файл…');
+      const [entities, trash] = await Promise.all([
+        window.entitiesApi.loadAll(),
+        window.entitiesApi.loadTrash()
+      ]);
+      const snapshot = {
+        exportedAt: new Date().toISOString(),
+        entities,
+        trash
+      };
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+      a.download = 'story-devils-backup-' + stamp + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Файл скачан');
     }catch(e){
-      list.innerHTML = '<div class="muted" style="font-size:13px; padding:10px 0;">Не удалось загрузить список бэкапов: ' + escapeHtml(e.message) + '</div>';
+      console.error(e);
+      showErrorBanner('Не удалось выгрузить бэкап: ' + (e.message||e));
     }
   }
 
