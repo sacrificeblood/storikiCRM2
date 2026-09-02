@@ -10,7 +10,7 @@
     }).filter(u=>u.url).slice(0, MAX_URLS);
   }
   let state = { layers: [], fanpages: [], creatives: [], links: [], fanpageRegistry: [], reports: {}, deletedItems: [], currentLayerId: null };
-  const VIEW_STATE_KEY = 'adboard-view-state';
+  const VIEW_STATE_KEY = 'adboard-view-state-v2';
   function loadViewState(){
     try{
       const raw = localStorage.getItem(VIEW_STATE_KEY);
@@ -28,7 +28,7 @@
   }
   const savedView = loadViewState();
 
-  let currentView = savedView && savedView.currentView ? savedView.currentView : 'board';
+  let currentView = savedView && savedView.currentView ? savedView.currentView : 'report';
   let dragging = null;
   let connecting = null;
 
@@ -749,13 +749,20 @@
     const trashId = type + ':' + cleanData.id;
     state.deletedItems.unshift({ id: trashId, type, data: cleanData, label, deletedAt: Date.now() });
     if(state.deletedItems.length > MAX_TRASH) state.deletedItems.length = MAX_TRASH;
-    // Do NOT touch lastSavedSnapshot here — the entity is already gone from state.X by now, so
-    // the very next flushSave() will correctly diff that against the snapshot and fire a real
-    // DELETE for it. Deleting it from the snapshot early (as before) hid it from that diff
-    // entirely, so the row never actually got removed from the server — only added to trash.
+    // Explicit and immediate: fire the trash write AND the actual deletion of the row right now,
+    // rather than leaving the deletion to be inferred later by diffing state against a snapshot.
+    // This removes any dependency on save timing/coalescing ever "noticing" the item is gone.
     window.entitiesApi.pushTrash(trashId, type, cleanData, label).catch(e=>{
       console.error('trash push failed', e);
       showErrorBanner('Не удалось сохранить в историю удалений: ' + (e.message||e));
+    });
+    window.entitiesApi.deleteEntity(type, cleanData.id).then(()=>{
+      // now that the server confirms it's gone, stop tracking it so a later save doesn't
+      // accidentally try to re-create it from a stale snapshot comparison
+      lastSavedSnapshot.delete(trashId);
+    }).catch(e=>{
+      console.error('immediate delete failed', e);
+      showErrorBanner('Не удалось удалить с сервера: ' + (e.message||e) + '\n\nПопробуйте удалить ещё раз.');
     });
   }
 
@@ -1657,7 +1664,7 @@
 
   // ---------- REPORT VIEW (Отчётность) ----------
   const REPORT_SHEETS = ['spendRev', 'accs', 'creoChecker', 'campaign', 'geoCipher', 'dashboard', 'tasks']; // more sheets get added here later, one at a time
-  let currentReportSheet = (savedView && savedView.currentReportSheet) ? savedView.currentReportSheet : 'spendRev';
+  let currentReportSheet = (savedView && savedView.currentReportSheet) ? savedView.currentReportSheet : 'dashboard';
   let currentReportMonth = null; // 'YYYY-MM' — always defaults to today's month on load
 
   const MONTH_NAMES = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
