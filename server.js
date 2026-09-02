@@ -13,7 +13,7 @@ const KYIV_TIMEZONE = 'Europe/Kyiv';
 async function sendTelegramMessage(text){
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if(!token || !chatId) return;
+  if(!token || !chatId) return false;
   try{
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
@@ -23,9 +23,12 @@ async function sendTelegramMessage(text){
     if(!res.ok){
       const body = await res.text();
       console.error('Telegram send failed:', res.status, body);
+      return false;
     }
+    return true;
   }catch(e){
     console.error('Telegram send error:', e.message);
+    return false;
   }
 }
 
@@ -148,6 +151,26 @@ app.get('/api/entities', async (req, res) => {
   }catch(e){
     console.error(e);
     res.status(500).json({ error: 'DB error: ' + e.message });
+  }
+});
+
+// Manual "send now" button for a daily task. It deliberately bypasses the
+// five-minute schedule but still gets the task text from the server database.
+app.post('/api/tasks/:id/send-reminder', async (req, res) => {
+  try{
+    const found = await pool.query(`SELECT data FROM entities WHERE id=$1 AND type='task'`, [req.params.id]);
+    if(!found.rows.length) return res.status(404).json({ error:'task not found' });
+    const task = found.rows[0].data || {};
+    if(!task.dailyReminder) return res.status(400).json({ error:'task is not daily' });
+    const sent = await sendTelegramMessage(
+      `⏰ <b>Выполни это задание!</b>\n${escapeHtmlTg(task.title || '(без названия)')}` +
+      (task.description ? `\n${escapeHtmlTg(task.description)}` : '')
+    );
+    if(!sent) return res.status(503).json({ error:'Telegram is not configured or rejected the message' });
+    res.json({ ok:true });
+  }catch(e){
+    console.error('manual task reminder failed', e);
+    res.status(500).json({ error:e.message });
   }
 });
 

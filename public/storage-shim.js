@@ -27,6 +27,16 @@
       if(!res.ok) throw new Error('Failed to delete ' + type + ' (' + res.status + ')');
       return true;
     },
+    async sendTaskReminderNow(id){
+      const res = await fetch('/api/tasks/' + encodeURIComponent(id) + '/send-reminder', {
+        method: 'POST', credentials: 'include'
+      });
+      if(!res.ok){
+        const data = await res.json().catch(()=>({}));
+        throw new Error(data.error || 'Не удалось отправить напоминание');
+      }
+      return await res.json();
+    },
     async bulkImport(items){
       const res = await fetch('/api/entities/bulk', {
         method: 'POST',

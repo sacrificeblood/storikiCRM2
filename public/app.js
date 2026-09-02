@@ -3756,6 +3756,7 @@
         <div class="daily-task-actions" style="margin-top:8px;">
           <button type="button" class="task-complete-btn daily-complete-btn" data-task-id="${t.id}" ${done?'disabled':''}>${done?'✓ Выполнено':'✓ Выполнить'}</button>
           <button type="button" class="task-reminder-toggle ${t.remindersEnabled === false ? '' : 'on'} daily-reminder-toggle" data-task-id="${t.id}">${t.remindersEnabled === false ? '🔕 Выкл.' : '🔔 Вкл.'}</button>
+          <button type="button" class="task-send-now daily-send-now-btn" data-task-id="${t.id}">↗ Сейчас</button>
           ${done ? '<span class="daily-task-done">Готово сегодня</span>' : ''}
         </div>
       </div>`;
@@ -3885,6 +3886,17 @@
     render();
   }
 
+  function sendTaskReminderNow(id, button){
+    if(button) { button.disabled = true; button.textContent = 'Отправка…'; }
+    window.entitiesApi.sendTaskReminderNow(id).then(()=>{
+      showToast('Напоминание отправлено в Telegram');
+    }).catch(e=>{
+      showErrorBanner(e.message || 'Не удалось отправить напоминание');
+    }).finally(()=>{
+      if(button) { button.disabled = false; button.textContent = '↗ Сейчас'; }
+    });
+  }
+
   function renderTasksView(){
     const tasks = tasksData();
     const wrap = document.getElementById('tasksBoardWrap');
@@ -3951,6 +3963,8 @@
       if(completeBtn && !completeBtn.disabled){ completeTask(completeBtn.dataset.taskId); return; }
       const reminderBtn = e.target.closest('.daily-reminder-toggle');
       if(reminderBtn){ toggleTaskReminders(reminderBtn.dataset.taskId); return; }
+      const sendNowBtn = e.target.closest('.daily-send-now-btn');
+      if(sendNowBtn){ sendTaskReminderNow(sendNowBtn.dataset.taskId, sendNowBtn); return; }
       const addBtn = e.target.closest('.daily-add-btn');
       if(addBtn){ openTaskEditor(null, true); return; }
       const card = e.target.closest('.daily-task-card');
