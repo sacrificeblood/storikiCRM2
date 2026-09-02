@@ -3764,13 +3764,12 @@
         <div class="daily-task-actions" style="margin-top:8px;">
           <button type="button" class="task-complete-btn daily-complete-btn" data-task-id="${t.id}" ${done?'disabled':''}>${done?'✓ Выполнено':'✓ Выполнить'}</button>
           <button type="button" class="task-reminder-toggle ${t.remindersEnabled === false ? '' : 'on'} daily-reminder-toggle" data-task-id="${t.id}">${t.remindersEnabled === false ? '🔕 Выкл.' : '🔔 Вкл.'}</button>
-          <button type="button" class="task-send-now daily-send-now-btn" data-task-id="${t.id}">↗ Сейчас</button>
+          <button type="button" class="timer-lever ${t.manualReminderStartedAt ? 'on' : ''} daily-timer-lever" data-task-id="${t.id}" ${t.manualReminderStartedAt ? 'disabled' : ''}><span class="lever-dot"></span>${t.manualReminderStartedAt ? 'Таймер запущен' : 'Запустить 5 мин'}</button>
           ${done ? '<span class="daily-task-done">Готово сегодня</span>' : ''}
         </div>
       </div>`;
     }).join('');
     wrap.innerHTML = `<section class="daily-tasks-panel"><div class="daily-tasks-title"><span>⏰ Ежедневные задачи</span><button type="button" class="btn btn-ghost daily-add-btn" style="padding:5px 8px;">+ Добавить</button></div><div class="daily-tasks-list">${cards || '<div class="tasks-empty">Нет ежедневных задач</div>'}</div></section>`;
-    wrap.querySelectorAll('.daily-send-now-btn').forEach(btn=>{ btn.textContent='⏱ Запустить'; });
   }
 
   function openTaskEditor(id, dailyPreset){
@@ -3898,7 +3897,7 @@
   }
 
   function startTaskReminderTimer(id, button){
-    if(button) { button.disabled = true; button.textContent = 'Запуск…'; }
+    if(button) button.disabled = true;
     window.entitiesApi.startTaskReminderTimer(id).then(result=>{
       const item = tasksData().find(t=>t.id===id);
       if(item){
@@ -3911,7 +3910,7 @@
     }).catch(e=>{
       showErrorBanner(e.message || 'Не удалось запустить таймер');
     }).finally(()=>{
-      if(button) { button.disabled = false; button.textContent = '⏱ Запустить'; }
+      if(button) button.disabled = false;
     });
   }
 
@@ -3981,8 +3980,8 @@
       if(completeBtn && !completeBtn.disabled){ completeTask(completeBtn.dataset.taskId); return; }
       const reminderBtn = e.target.closest('.daily-reminder-toggle');
       if(reminderBtn){ toggleTaskReminders(reminderBtn.dataset.taskId); return; }
-      const sendNowBtn = e.target.closest('.daily-send-now-btn');
-      if(sendNowBtn){ startTaskReminderTimer(sendNowBtn.dataset.taskId, sendNowBtn); return; }
+      const timerLever = e.target.closest('.daily-timer-lever');
+      if(timerLever && !timerLever.disabled){ startTaskReminderTimer(timerLever.dataset.taskId, timerLever); return; }
       const addBtn = e.target.closest('.daily-add-btn');
       if(addBtn){ openTaskEditor(null, true); return; }
       const card = e.target.closest('.daily-task-card');

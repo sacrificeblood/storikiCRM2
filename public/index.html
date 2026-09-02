@@ -453,6 +453,10 @@
   .task-reminder-toggle.on{border-color:rgba(217,178,90,.6); color:var(--amber);}
   .task-send-now{border:1px solid rgba(121,217,255,.55); background:rgba(121,217,255,.08); color:#79d9ff; border-radius:5px; padding:3px 7px; font-size:11px; cursor:pointer; font-family:inherit; white-space:nowrap;}
   .task-send-now:disabled{opacity:.5; cursor:wait;}
+  .timer-lever{display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); background:var(--panel); color:var(--text-dim); border-radius:14px; padding:3px 8px 3px 4px; font-size:11px; cursor:pointer; font-family:inherit; white-space:nowrap;}
+  .timer-lever .lever-dot{width:16px; height:16px; border-radius:50%; background:var(--text-dim); transition:background .2s, transform .2s;}
+  .timer-lever.on{border-color:var(--green); color:var(--green); cursor:default;}
+  .timer-lever.on .lever-dot{background:var(--green); box-shadow:0 0 8px var(--green-glow); transform:translateX(2px);}
   .task-countdown{color:var(--text-dim); font-variant-numeric:tabular-nums;}
   .tasks-archive{margin-top:18px; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px;}
   .tasks-archive summary{cursor:pointer; color:var(--text-dim); font-size:12px; font-weight:700;}
