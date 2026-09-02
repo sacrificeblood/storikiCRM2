@@ -4212,7 +4212,7 @@
     icon.alt = 'Minon Devils';
     const brand = document.createElement('span');
     brand.className = 'minon-brand-lockup';
-    brand.innerHTML = '<strong>MINON</strong><em>DEVILS</em><small>TRAFFIC LEDGER</small>';
+    brand.innerHTML = '<strong>MINON</strong><em>DEVILS</em><small>TRAFFIC DEVILS</small>';
     heading.replaceChildren(icon, brand);
   }
   applyMinonBrand();
