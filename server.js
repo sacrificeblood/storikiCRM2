@@ -6,6 +6,28 @@ const { pool, initSchema } = require('./db');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ---------- Telegram notifications for the Tasks board ----------
+// Fully optional: if TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID aren't set, this quietly does nothing.
+const TASK_COLUMN_LABELS = { todo: 'To Do', in_progress: 'In Progress', done: 'Done' };
+async function sendTelegramMessage(text){
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if(!token || !chatId) return;
+  try{
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
+    });
+    if(!res.ok){
+      const body = await res.text();
+      console.error('Telegram send failed:', res.status, body);
+    }
+  }catch(e){
+    console.error('Telegram send error:', e.message);
+  }
+}
+
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
@@ -64,11 +86,30 @@ app.put('/api/entities/:type/:id', async (req, res) => {
     const { type, id } = req.params;
     const data = req.body;
     if(typeof data !== 'object' || data === null) return res.status(400).json({ error: 'body must be a JSON object' });
+
+    let notifyMsg = null;
+    if(type === 'task'){
+      const existing = await pool.query('SELECT data FROM entities WHERE id=$1', [id]);
+      if(!existing.rows.length){
+        notifyMsg = `🆕 <b>Новая задача:</b> ${escapeHtmlTg(data.title || '(без названия)')}` +
+          (data.description ? `\n${escapeHtmlTg(data.description)}` : '');
+      }else{
+        const oldData = existing.rows[0].data || {};
+        if(oldData.column !== data.column){
+          const fromLabel = TASK_COLUMN_LABELS[oldData.column] || oldData.column || '—';
+          const toLabel = TASK_COLUMN_LABELS[data.column] || data.column || '—';
+          notifyMsg = `↪️ <b>${escapeHtmlTg(data.title || '(без названия)')}</b>: ${fromLabel} → ${toLabel}`;
+        }
+      }
+    }
+
     await pool.query(
       `INSERT INTO entities (id, type, data, updated_at) VALUES ($1,$2,$3, now())
        ON CONFLICT (id) DO UPDATE SET type=$2, data=$3, updated_at=now()`,
       [id, type, JSON.stringify(data)]
     );
+
+    if(notifyMsg) sendTelegramMessage(notifyMsg);
     res.json({ ok: true });
   }catch(e){
     console.error(e);
@@ -76,9 +117,22 @@ app.put('/api/entities/:type/:id', async (req, res) => {
   }
 });
 
+function escapeHtmlTg(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 app.delete('/api/entities/:type/:id', async (req, res) => {
   try{
-    await pool.query('DELETE FROM entities WHERE id=$1', [req.params.id]);
+    const { type, id } = req.params;
+    let notifyMsg = null;
+    if(type === 'task'){
+      const existing = await pool.query('SELECT data FROM entities WHERE id=$1', [id]);
+      if(existing.rows.length){
+        notifyMsg = `🗑️ <b>Задача удалена:</b> ${escapeHtmlTg((existing.rows[0].data||{}).title || id)}`;
+      }
+    }
+    await pool.query('DELETE FROM entities WHERE id=$1', [id]);
+    if(notifyMsg) sendTelegramMessage(notifyMsg);
     res.json({ ok: true });
   }catch(e){
     console.error(e);
