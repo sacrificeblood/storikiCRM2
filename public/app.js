@@ -267,7 +267,7 @@
   function migrateLegacyBlob(parsed){
     const items = [];
     const trash = [];
-    const push = (type, obj, extra) => { if(obj && obj.id) items.push({ id: type+':'+obj.id, type, data: extra ? {...obj, ...extra} : obj }); };
+    const push = (type, obj, extra) => { if(obj && obj.id) items.push({ id: obj.id, type, data: extra ? {...obj, ...extra} : obj }); };
 
     (parsed.layers||[]).forEach(x => push('layer', x));
     let fanpages = parsed.fanpages || [];
@@ -309,15 +309,15 @@
       accs.forEach(rec => {
         const agentName = rec.agent || 'Без агента';
         let agentId = agentIdByName.get(agentName);
-        if(!agentId){ agentId = uid(); agentIdByName.set(agentName, agentId); items.push({id:'accagent:'+agentId, type:'accagent', data:{id:agentId, name:agentName}}); }
+        if(!agentId){ agentId = uid(); agentIdByName.set(agentName, agentId); items.push({id:agentId, type:'accagent', data:{id:agentId, name:agentName}}); }
         const socKey = agentId+'|'+(rec.soc||'')+'|'+(rec.adsPowerId||'');
         let socId = socIdByKey.get(socKey);
         if(!socId){
           socId = uid(); socIdByKey.set(socKey, socId);
-          items.push({id:'accsoc:'+socId, type:'accsoc', data:{id:socId, agentId, name:rec.soc||'Без soc', adsPowerId:rec.adsPowerId||'', pixel:rec.pixel||''}});
+          items.push({id:socId, type:'accsoc', data:{id:socId, agentId, name:rec.soc||'Без soc', adsPowerId:rec.adsPowerId||'', pixel:rec.pixel||''}});
         }
         const accId = rec.id || uid();
-        items.push({id:'acc:'+accId, type:'acc', data:{id:accId, socId, accId:rec.accId||'', dateIssued:rec.dateIssued||bucketDay, dateBan:rec.dateBan||'', status:rec.status||'approved', note:rec.note||''}});
+        items.push({id:accId, type:'acc', data:{id:accId, socId, accId:rec.accId||'', dateIssued:rec.dateIssued||bucketDay, dateBan:rec.dateBan||'', status:rec.status||'approved', note:rec.note||''}});
       });
     }
 
@@ -351,26 +351,54 @@
   async function loadState(){
     try{
       let entities = await window.entitiesApi.loadAll();
-      if(entities.length === 0){
-        // nothing in the new storage yet — check if the OLD version left something to migrate
-        const legacy = await window.entitiesApi.legacyGet(STORAGE_KEY);
-        if(legacy){
-          try{
-            const migrated = migrateLegacyBlob(JSON.parse(legacy));
-            if(migrated.items.length){
-              await window.entitiesApi.bulkImport(migrated.items);
-              for(const t of migrated.trash){
-                try{ await window.entitiesApi.pushTrash(t.id, t.type, t.data, t.label); }catch(e2){ console.error('trash migrate failed', e2); }
-              }
-              showToast('Старые данные перенесены в новое хранилище');
-              entities = await window.entitiesApi.loadAll();
+      // Migration is gated purely by whether the OLD blob still exists on the server — not by
+      // whether the new entities table currently looks empty (a transient read glitch there
+      // must never be able to trigger a re-migration that resurrects everything ever deleted).
+      let legacy = null;
+      try{ legacy = await window.entitiesApi.legacyGet(STORAGE_KEY); }catch(e){ /* fine, nothing to migrate */ }
+      if(legacy){
+        try{
+          const migrated = migrateLegacyBlob(JSON.parse(legacy));
+          if(migrated.items.length){
+            await window.entitiesApi.bulkImport(migrated.items);
+            for(const t of migrated.trash){
+              try{ await window.entitiesApi.pushTrash(t.id, t.type, t.data, t.label); }catch(e2){ console.error('trash migrate failed', e2); }
             }
-          }catch(e2){
-            console.error('legacy migration failed', e2);
-            showErrorBanner('Не удалось перенести старые данные: ' + (e2.message||e2));
+            showToast('Старые данные перенесены в новое хранилище');
           }
+          // Whether or not there was anything worth migrating, the old blob must never be read
+          // again — deleting it now is what actually prevents any future resurrection.
+          await window.entitiesApi.legacyDelete(STORAGE_KEY);
+          entities = await window.entitiesApi.loadAll();
+        }catch(e2){
+          console.error('legacy migration failed', e2);
+          showErrorBanner('Не удалось перенести старые данные: ' + (e2.message||e2));
         }
+      }else if(entities.length === 0){
+        // No legacy blob (so this genuinely isn't a migration case) and the table reads empty —
+        // could be real (a fresh board) or a transient hiccup from a serverless DB waking up.
+        // One quick, harmless re-read to tell the difference before rendering an empty screen.
+        await new Promise(r => setTimeout(r, 400));
+        try{ entities = await window.entitiesApi.loadAll(); }catch(e3){ /* keep the original (empty) result */ }
       }
+
+      // One-time repair for rows saved under the OLD, buggy composite id scheme (`type:realId`
+      // instead of just `realId`) — an earlier version of migration created ids that way, which
+      // silently broke deleting anything that came from that migration: the delete call always
+      // targeted the plain id, so it never matched the row's actual (prefixed) primary key.
+      const needsRepair = entities.filter(e => e.type && typeof e.id === 'string' && e.id.startsWith(e.type + ':'));
+      if(needsRepair.length){
+        console.log('repairing', needsRepair.length, 'entities with old composite ids');
+        for(const e of needsRepair){
+          const plainId = e.id.slice(e.type.length + 1);
+          try{
+            await window.entitiesApi.saveEntity(e.type, plainId, e.data);
+            await window.entitiesApi.deleteEntity(e.type, e.id);
+          }catch(err){ console.error('repair failed for', e.id, err); }
+        }
+        try{ entities = await window.entitiesApi.loadAll(); }catch(e4){ /* keep what we have */ }
+      }
+
       applyFlatEntities(entities);
       lastSavedSnapshot = snapshotFlat(flattenState());
 

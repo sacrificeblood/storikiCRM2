@@ -193,6 +193,18 @@ app.get('/api/kv/:key', async (req, res) => {
   }
 });
 
+// Called once, right after a successful migration, so the old blob can never be re-read and
+// re-imported again later (e.g. if a transient DB hiccup ever makes the new entities table look
+// empty when it isn't — with the old blob gone, there is nothing left to wrongly migrate from).
+app.delete('/api/kv/:key', async (req, res) => {
+  try{
+    await pool.query('DELETE FROM board_state WHERE key=$1', [req.params.key]);
+    res.json({ ok: true });
+  }catch(e){
+    res.status(500).json({ error: 'DB error: ' + e.message });
+  }
+});
+
 app.get('/api/activity', async (req, res) => {
   try{
     const result = await pool.query('SELECT action, created_at FROM activity_log ORDER BY created_at DESC LIMIT 100');

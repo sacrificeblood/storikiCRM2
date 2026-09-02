@@ -70,6 +70,11 @@
       if(!res.ok) throw new Error('Legacy fetch failed (' + res.status + ')');
       const data = await res.json();
       return data.value;
+    },
+    async legacyDelete(key){
+      const res = await fetch('/api/kv/' + encodeURIComponent(key), { method: 'DELETE', credentials: 'include' });
+      if(!res.ok) throw new Error('Legacy delete failed (' + res.status + ')');
+      return true;
     }
   };
 
