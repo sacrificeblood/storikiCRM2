@@ -3701,14 +3701,14 @@
   function reminderCountdown(task){
     if(!task.dailyReminder) return '';
     if(task.remindersEnabled === false) return 'Напоминания выключены';
-    if(taskIsDailyDone(task)) return 'Выполнено на сегодня';
     const [hours, minutes] = String(task.reminderTime || '10:00').split(':').map(Number);
     if(!Number.isInteger(hours) || !Number.isInteger(minutes)) return '';
     const now = kyivClock();
     const current = Number(now.hour) * 3600 + Number(now.minute) * 60 + Number(now.second);
     const due = hours * 3600 + minutes * 60;
     let seconds;
-    if(current < due) seconds = due - current;
+    if(taskIsDailyDone(task)) seconds = due + 86400 - current;
+    else if(current < due) seconds = due - current;
     else {
       const sinceDue = current - due;
       seconds = 300 - (sinceDue % 300);
@@ -3716,6 +3716,7 @@
     }
     const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60), s = seconds % 60;
     const formatted = h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
+    if(taskIsDailyDone(task)) return `Следующее завтра: ${formatted}`;
     return seconds === 0 ? 'Напоминание сейчас' : `До напоминания: ${formatted}`;
   }
   function refreshReminderCountdowns(){
@@ -3724,6 +3725,26 @@
       const task = tasksData().find(t=>t.id===el.dataset.reminderCountdown);
       if(task) el.textContent = reminderCountdown(task);
     });
+  }
+
+  function renderDailyTasks(tasks, matches){
+    const wrap = document.getElementById('dailyTasksWrap');
+    const dailyTasks = tasks.filter(t=>t.dailyReminder).filter(matches);
+    if(!dailyTasks.length){ wrap.innerHTML=''; return; }
+    const rows = dailyTasks.map(t=>{
+      const done = taskIsDailyDone(t);
+      return `<tr data-task-id="${t.id}">
+        <td><strong>${escapeHtml(t.title)}</strong>${t.description ? `<div class="muted" style="font-size:11.5px; margin-top:3px; white-space:pre-wrap;">${escapeHtml(t.description)}</div>` : ''}</td>
+        <td><span class="task-reminder-badge">${escapeHtml(t.reminderTime||'10:00')} Киев</span></td>
+        <td><span class="task-countdown" data-reminder-countdown="${t.id}">${escapeHtml(reminderCountdown(t))}</span></td>
+        <td><div class="daily-task-actions">
+          <button type="button" class="task-complete-btn daily-complete-btn" data-task-id="${t.id}" ${done?'disabled':''}>${done?'✓ Выполнено':'✓ Выполнить'}</button>
+          <button type="button" class="task-reminder-toggle ${t.remindersEnabled === false ? '' : 'on'} daily-reminder-toggle" data-task-id="${t.id}">${t.remindersEnabled === false ? '🔕 Выкл.' : '🔔 Вкл.'}</button>
+          ${done ? '<span class="daily-task-done">Готово сегодня</span>' : ''}
+        </div></td>
+      </tr>`;
+    }).join('');
+    wrap.innerHTML = `<section class="daily-tasks-panel"><div class="daily-tasks-title">⏰ Ежедневные задачи</div><table><thead><tr><th>Задача</th><th>Время</th><th>Таймер</th><th>Действия</th></tr></thead><tbody>${rows}</tbody></table></section>`;
   }
 
   function openTaskEditor(id, dailyPreset){
@@ -3848,8 +3869,9 @@
     const filter = document.getElementById('taskViewFilter').value || 'active';
     const matches = t => !search || `${t.title||''}\n${t.description||''}`.toLowerCase().includes(search);
     const archiveTasks = tasks.filter(taskIsArchived).filter(matches);
-    const activeTasks = tasks.filter(t=>!taskIsArchived(t)).filter(matches);
+    const activeTasks = tasks.filter(t=>!t.dailyReminder && !taskIsArchived(t)).filter(matches);
     const shown = filter === 'archive' ? [] : activeTasks;
+    renderDailyTasks(tasks, matches);
     let html = '<div class="tasks-board">';
     TASK_COLUMNS.forEach((col, colIdx) => {
       const colTasks = shown.filter(t=>visibleTaskColumn(t)===col.key);
@@ -3886,6 +3908,7 @@
 
   function setupTasksDelegation(){
     const wrap = document.getElementById('tasksBoardWrap');
+    const dailyWrap = document.getElementById('dailyTasksWrap');
     wrap.addEventListener('click', safe((e)=>{
       const moveLeft = e.target.closest('.move-left-btn');
       if(moveLeft && !moveLeft.disabled){ moveTask(moveLeft.dataset.taskId, -1); return; }
@@ -3899,6 +3922,14 @@
       if(delBtn){ deleteTask(delBtn.dataset.taskId); return; }
       const card = e.target.closest('.task-card');
       if(card){ openTaskEditor(card.dataset.taskId); return; }
+    }));
+    dailyWrap.addEventListener('click', safe((e)=>{
+      const completeBtn = e.target.closest('.daily-complete-btn');
+      if(completeBtn && !completeBtn.disabled){ completeTask(completeBtn.dataset.taskId); return; }
+      const reminderBtn = e.target.closest('.daily-reminder-toggle');
+      if(reminderBtn){ toggleTaskReminders(reminderBtn.dataset.taskId); return; }
+      const row = e.target.closest('tr[data-task-id]');
+      if(row){ openTaskEditor(row.dataset.taskId); }
     }));
   }
   document.getElementById('addTaskBtn').addEventListener('click', safe(()=>openTaskEditor(null)));
