@@ -1,7 +1,7 @@
 {
   "name": "adboard-server",
   "version": "1.0.0",
-  "description": "Story Devils — traffic linking board with shared Postgres storage",
+  "description": "Minon Devils — traffic operations command center with shared Postgres storage",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
