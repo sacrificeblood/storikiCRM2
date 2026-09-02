@@ -63,19 +63,27 @@
 
   .tabs{display:flex; gap:4px; background:var(--panel); padding:4px; border-radius:8px; border:1px solid var(--border);}
   .tab-btn{
-    padding:7px 16px; border:none; border-radius:6px; cursor:pointer;
+    padding:7px 16px; border:none; border-radius:6px; cursor:grab;
     background:transparent; color:var(--text-dim); font-size:13px; font-weight:600;
-    transition:all .15s;
+    transition:transform .18s cubic-bezier(.34,1.56,.64,1), filter .15s, background .2s, color .2s, box-shadow .25s;
+    position:relative;
   }
-  .tab-btn.active{background:var(--green); color:#1a0505; box-shadow:0 0 12px var(--green-glow);}
+  .tab-btn:hover{transform:translateY(-1px); color:var(--text);}
+  .tab-btn.active{background:var(--green); color:#1a0505; box-shadow:0 0 12px var(--green-glow); animation:tabGlow 2.4s ease-in-out infinite;}
+  .tab-btn.tab-dragging, .sheet-tab.tab-dragging{opacity:0.35; cursor:grabbing; transform:scale(0.96);}
+  @keyframes tabGlow{0%,100%{box-shadow:0 0 10px var(--green-glow);} 50%{box-shadow:0 0 18px var(--green-glow);}}
+
+  .sheet-tab{cursor:grab; transition:transform .18s cubic-bezier(.34,1.56,.64,1), background .2s, color .2s;}
+  .sheet-tab:hover{transform:translateY(-1px);}
+  .sheet-tab.active{animation:tabGlow 2.4s ease-in-out infinite;}
 
   .toolbar{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
   .btn{
     padding:8px 14px; border-radius:6px; border:1px solid transparent; cursor:pointer;
-    font-size:13px; font-weight:600; transition:transform .1s, filter .1s, box-shadow .15s;
+    font-size:13px; font-weight:600; transition:transform .12s cubic-bezier(.34,1.56,.64,1), filter .1s, box-shadow .2s;
   }
-  .btn:hover{filter:brightness(1.1);}
-  .btn:active{transform:scale(0.97);}
+  .btn:hover{filter:brightness(1.12); transform:translateY(-1px);}
+  .btn:active{transform:scale(0.95);}
   .btn-fan{background:var(--green); color:#1a0505; box-shadow:0 0 10px var(--green-glow);}
   .btn-cre{background:var(--teal); color:#1a0505; box-shadow:0 0 10px var(--teal-glow);}
   .btn-layer{background:var(--amber); color:#241a02; box-shadow:0 0 10px rgba(232,193,90,0.4);}
@@ -91,6 +99,11 @@
   }
 
   main{flex:1; position:relative; overflow:hidden; display:flex; flex-direction:column;}
+  #report-view, #board-outer, #table-view, #fanpage-view,
+  #accsView, #creoView, #campaignView, #geoCipherView, #dashboardView, #tasksView{
+    animation:viewFadeIn .28s ease-out;
+  }
+  @keyframes viewFadeIn{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
 
   /* BOARD VIEW */
   .board-topbar{
@@ -243,17 +256,21 @@
   .overlay{
     position:fixed; inset:0; background:rgba(2,6,4,0.7); z-index:500;
     display:flex; align-items:center; justify-content:center; padding:16px;
+    animation:overlayFadeIn .18s ease-out;
   }
+  @keyframes overlayFadeIn{from{opacity:0;} to{opacity:1;}}
   .modal{
     background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:22px; width:100%; max-width:400px;
     box-shadow:0 20px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05);
     max-height:88vh; overflow-y:auto;
+    animation:modalPopIn .22s cubic-bezier(.34,1.56,.64,1);
   }
+  @keyframes modalPopIn{from{opacity:0; transform:scale(0.92) translateY(8px);} to{opacity:1; transform:scale(1) translateY(0);}}
   .modal h3{margin:0 0 14px 0; font-size:15.5px; color:var(--text);}
   .modal .field{margin-bottom:12px; display:flex; flex-direction:column; gap:5px;}
   .modal label{font-size:11.5px; font-weight:700; color:var(--text-dim); letter-spacing:0.3px;}
-  .modal input, .modal select{padding:9px 10px; border:1px solid var(--border); border-radius:6px; font-size:14px; background:var(--panel-2); color:var(--text);}
-  .modal input:focus, .modal select:focus{outline:1px solid var(--green);}
+  .modal input, .modal select{padding:9px 10px; border:1px solid var(--border); border-radius:6px; font-size:14px; background:var(--panel-2); color:var(--text); transition:border-color .15s, box-shadow .15s;}
+  .modal input:focus, .modal select:focus{outline:none; border-color:var(--green); box-shadow:0 0 0 3px var(--green-glow);}
   .modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:16px;}
   .modal-actions .spacer{flex:1;}
   .url-row{display:flex; gap:6px; align-items:center;}
@@ -343,7 +360,7 @@
   }
   table.accs-table td{padding:7px 12px; font-size:12.5px; border-bottom:1px solid var(--border-soft); vertical-align:middle;}
   table.accs-table td:first-child{padding-left:46px;}
-  table.accs-table tbody tr:hover{background:rgba(255,255,255,0.03);}
+  table.accs-table tbody tr{transition:background .12s;} table.accs-table tbody tr:hover{background:rgba(255,255,255,0.05);}
   .accs-status-badge{
     display:inline-block; padding:3px 9px; border-radius:10px; font-size:10.5px; font-weight:700; border:1px solid;
     cursor:pointer; font-family:inherit;
@@ -370,7 +387,7 @@
     letter-spacing:0.3px; background:var(--panel); border-bottom:1px solid var(--border-soft); white-space:nowrap;
   }
   table.creo-table td{padding:7px 10px; font-size:12px; border-bottom:1px solid var(--border-soft); vertical-align:middle; white-space:nowrap;}
-  table.creo-table tbody tr:hover{background:rgba(255,255,255,0.03);}
+  table.creo-table tbody tr{transition:background .12s;} table.creo-table tbody tr:hover{background:rgba(255,255,255,0.05);}
   .creo-feed-btn{
     border:1px solid var(--border); background:var(--panel-2); color:var(--text-dim); border-radius:6px;
     padding:3px 8px; font-size:11px; cursor:pointer; font-family:inherit; max-width:140px; overflow:hidden;
@@ -408,7 +425,12 @@
   /* DASHBOARD */
   #dashboardWrap{padding:4px 0;}
   .dash-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; margin-bottom:22px;}
-  .dash-card{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px 18px;}
+  .dash-card{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px 18px; transition:transform .2s cubic-bezier(.34,1.56,.64,1), border-color .2s, box-shadow .2s; animation:cardFadeIn .35s ease-out backwards;}
+  .dash-card:hover{transform:translateY(-3px); border-color:var(--green-dim); box-shadow:0 8px 20px rgba(0,0,0,0.35);}
+  .dash-grid .dash-card:nth-child(1){animation-delay:.02s;} .dash-grid .dash-card:nth-child(2){animation-delay:.06s;}
+  .dash-grid .dash-card:nth-child(3){animation-delay:.10s;} .dash-grid .dash-card:nth-child(4){animation-delay:.14s;}
+  .dash-grid .dash-card:nth-child(5){animation-delay:.18s;} .dash-grid .dash-card:nth-child(6){animation-delay:.22s;}
+  @keyframes cardFadeIn{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
   .dash-card .dash-label{font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-dim); margin-bottom:6px;}
   .dash-card .dash-value{font-size:26px; font-weight:800; color:var(--text);}
   .dash-card .dash-sub{font-size:12px; color:var(--text-dim); margin-top:4px;}
@@ -419,7 +441,8 @@
   .tasks-column{background:var(--panel); border:1px solid var(--border); border-radius:10px; min-width:280px; max-width:280px; padding:12px; flex-shrink:0;}
   .tasks-column-header{display:flex; justify-content:space-between; align-items:center; font-weight:700; font-size:13px; margin-bottom:10px; padding:0 4px;}
   .tasks-column-header .count{color:var(--text-dim); font-weight:400; font-size:11.5px;}
-  .task-card{background:var(--panel-2); border:1px solid var(--border-soft); border-radius:8px; padding:10px 12px; margin-bottom:8px; cursor:pointer;}
+  .task-card{background:var(--panel-2); border:1px solid var(--border-soft); border-radius:8px; padding:10px 12px; margin-bottom:8px; cursor:pointer; transition:transform .18s cubic-bezier(.34,1.56,.64,1), border-color .2s, box-shadow .2s;}
+  .task-card:hover{transform:translateY(-2px) scale(1.01); box-shadow:0 6px 16px rgba(0,0,0,0.3);}
   .task-card:hover{border-color:var(--green-dim);}
   .task-card .task-title{font-size:13px; font-weight:600; color:var(--text); margin-bottom:4px; word-break:break-word;}
   .task-card .task-desc{font-size:11.5px; color:var(--text-dim); word-break:break-word; white-space:pre-wrap;}
@@ -486,7 +509,7 @@
 <body>
 <div id="app">
   <header>
-    <h1><img src="data:image/png;base64,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" alt="Story Devils" style="width:28px;height:28px;border-radius:6px;vertical-align:middle;margin-right:2px;">Story Devils <span style="font-size:11px; color:var(--text-dim); font-weight:400;">build 24</span></h1>
+    <h1><img src="data:image/png;base64,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" alt="Story Devils" style="width:28px;height:28px;border-radius:6px;vertical-align:middle;margin-right:2px;">Story Devils <span style="font-size:11px; color:var(--text-dim); font-weight:400;">build 25</span></h1>
     <div class="tabs">
       <button class="tab-btn active" data-view="report" id="tabReportBtn">Отчётность</button>
       <button class="tab-btn" data-view="board" id="tabBoardBtn" style="opacity:0.6;">Доска</button>

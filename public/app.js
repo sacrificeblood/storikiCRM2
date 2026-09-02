@@ -409,6 +409,8 @@
     setupCampaignDelegation();
     setupGeoCipherDelegation();
     setupTasksDelegation();
+    makeTabsDraggable('.tabs', '.tab-btn', 'adboard-main-tabs-order');
+    makeTabsDraggable('.report-sheets-bar', '.sheet-tab', 'adboard-sheet-tabs-order');
     setupReportDelegation();
     applyTransform();
     render();
@@ -760,6 +762,7 @@
       // now that the server confirms it's gone, stop tracking it so a later save doesn't
       // accidentally try to re-create it from a stale snapshot comparison
       lastSavedSnapshot.delete(trashId);
+      showToast('Удалено: ' + (label || type));
     }).catch(e=>{
       console.error('immediate delete failed', e);
       showErrorBanner('Не удалось удалить с сервера: ' + (e.message||e) + '\n\nПопробуйте удалить ещё раз.');
@@ -4002,6 +4005,50 @@
     console.error(e.reason);
     showErrorBanner((e.reason && e.reason.message) ? e.reason.message : String(e.reason));
   });
+
+  // ---------- DRAG-TO-REORDER TABS (main tabs + report sheet tabs) ----------
+  function makeTabsDraggable(containerSelector, itemSelector, storageKey){
+    const container = document.querySelector(containerSelector);
+    if(!container) return;
+
+    // restore any previously saved order before wiring up drag handlers
+    try{
+      const savedOrder = JSON.parse(localStorage.getItem(storageKey) || 'null');
+      if(Array.isArray(savedOrder)){
+        savedOrder.forEach(id => {
+          const el = document.getElementById(id);
+          if(el) container.appendChild(el);
+        });
+      }
+    }catch(e){ /* ignore malformed saved order */ }
+
+    function persistOrder(){
+      const ids = Array.from(container.querySelectorAll(itemSelector)).map(el=>el.id);
+      try{ localStorage.setItem(storageKey, JSON.stringify(ids)); }catch(e){}
+    }
+
+    let draggedEl = null;
+    container.querySelectorAll(itemSelector).forEach(el => {
+      el.setAttribute('draggable', 'true');
+      el.addEventListener('dragstart', (e) => {
+        draggedEl = el;
+        el.classList.add('tab-dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      el.addEventListener('dragend', () => {
+        el.classList.remove('tab-dragging');
+        draggedEl = null;
+        persistOrder();
+      });
+      el.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if(!draggedEl || draggedEl === el) return;
+        const rect = el.getBoundingClientRect();
+        const before = (e.clientX - rect.left) < rect.width / 2;
+        container.insertBefore(draggedEl, before ? el : el.nextSibling);
+      });
+    });
+  }
 
   window.__startBoard = loadState;
 })();
