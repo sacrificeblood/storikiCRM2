@@ -7,7 +7,18 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '5mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    // index.html must NEVER be cached — it's what decides which app.js?v=N gets loaded.
+    // A cached index.html means the browser can be stuck loading an old build forever,
+    // even after a fresh deploy, even in incognito, since it never re-checks with the server.
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 
 // Quick way to check from a browser whether the database is actually reachable:
 // just open https://your-site/api/health
