@@ -27,13 +27,13 @@
       if(!res.ok) throw new Error('Failed to delete ' + type + ' (' + res.status + ')');
       return true;
     },
-    async sendTaskReminderNow(id){
-      const res = await fetch('/api/tasks/' + encodeURIComponent(id) + '/send-reminder', {
+    async startTaskReminderTimer(id){
+      const res = await fetch('/api/tasks/' + encodeURIComponent(id) + '/start-reminder-timer', {
         method: 'POST', credentials: 'include'
       });
       if(!res.ok){
         const data = await res.json().catch(()=>({}));
-        throw new Error(data.error || 'Не удалось отправить напоминание');
+        throw new Error(data.error || 'Не удалось запустить таймер');
       }
       return await res.json();
     },

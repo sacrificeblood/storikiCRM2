@@ -64,6 +64,19 @@ async function deliverDueTaskReminders(){
     const task = row.data || {};
     if(!task.dailyReminder || task.remindersEnabled === false || !validDailyTime(task.reminderTime)) continue;
     if(task.completedForDate === date) continue;
+    const manualStartedAt = Date.parse(task.manualReminderStartedAt || '');
+    if(Number.isFinite(manualStartedAt)){
+      const elapsed = Date.now() - manualStartedAt;
+      if(elapsed < 5 * 60 * 1000) continue;
+      const interval = Math.floor(elapsed / (5 * 60 * 1000));
+      await sendTaskTelegramOnce(
+        row.id,
+        `manual-timer:${manualStartedAt}:${interval}`,
+        `⏰ <b>Выполни это задание!</b>\n${escapeHtmlTg(task.title || '(без названия)')}` +
+          (task.description ? `\n${escapeHtmlTg(task.description)}` : '')
+      );
+      continue;
+    }
     const [hours, minutes] = task.reminderTime.split(':').map(Number);
     const dueAt = hours * 60 + minutes;
     // Due time plus every five minutes afterwards. The notification log makes this
@@ -154,22 +167,21 @@ app.get('/api/entities', async (req, res) => {
   }
 });
 
-// Manual "send now" button for a daily task. It deliberately bypasses the
-// five-minute schedule but still gets the task text from the server database.
-app.post('/api/tasks/:id/send-reminder', async (req, res) => {
+// Starts a five-minute repeat timer for a daily task. The timestamp is stored
+// server-side so it survives a browser refresh and Railway restart.
+app.post('/api/tasks/:id/start-reminder-timer', async (req, res) => {
   try{
     const found = await pool.query(`SELECT data FROM entities WHERE id=$1 AND type='task'`, [req.params.id]);
     if(!found.rows.length) return res.status(404).json({ error:'task not found' });
     const task = found.rows[0].data || {};
     if(!task.dailyReminder) return res.status(400).json({ error:'task is not daily' });
-    const sent = await sendTelegramMessage(
-      `⏰ <b>Выполни это задание!</b>\n${escapeHtmlTg(task.title || '(без названия)')}` +
-      (task.description ? `\n${escapeHtmlTg(task.description)}` : '')
-    );
-    if(!sent) return res.status(503).json({ error:'Telegram is not configured or rejected the message' });
-    res.json({ ok:true });
+    const startedAt = new Date().toISOString();
+    task.manualReminderStartedAt = startedAt;
+    task.remindersEnabled = true;
+    await pool.query(`UPDATE entities SET data=$2, updated_at=now() WHERE id=$1`, [req.params.id, JSON.stringify(task)]);
+    res.json({ ok:true, startedAt });
   }catch(e){
-    console.error('manual task reminder failed', e);
+    console.error('manual reminder timer failed', e);
     res.status(500).json({ error:e.message });
   }
 });

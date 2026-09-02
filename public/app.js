@@ -3720,6 +3720,14 @@
   function reminderCountdown(task){
     if(!task.dailyReminder) return '';
     if(task.remindersEnabled === false) return 'Напоминания выключены';
+    const manualStartedAt = Date.parse(task.manualReminderStartedAt || '');
+    if(Number.isFinite(manualStartedAt)){
+      const cycle = 5 * 60 * 1000;
+      const elapsed = appNow().getTime() - manualStartedAt;
+      const next = elapsed < cycle ? cycle - elapsed : cycle - (elapsed % cycle);
+      const seconds = Math.max(0, Math.ceil(next / 1000));
+      return `Таймер: ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
+    }
     const due = dailyDueSeconds(task);
     if(due == null) return '';
     const current = currentKyivSeconds();
@@ -3762,6 +3770,7 @@
       </div>`;
     }).join('');
     wrap.innerHTML = `<section class="daily-tasks-panel"><div class="daily-tasks-title"><span>⏰ Ежедневные задачи</span><button type="button" class="btn btn-ghost daily-add-btn" style="padding:5px 8px;">+ Добавить</button></div><div class="daily-tasks-list">${cards || '<div class="tasks-empty">Нет ежедневных задач</div>'}</div></section>`;
+    wrap.querySelectorAll('.daily-send-now-btn').forEach(btn=>{ btn.textContent='⏱ Запустить'; });
   }
 
   function openTaskEditor(id, dailyPreset){
@@ -3873,6 +3882,7 @@
       item.completedForDate = due != null && currentKyivSeconds() < due
         ? kyivDateFor(new Date(appNow().getTime() - 24 * 60 * 60 * 1000))
         : kyivDate();
+      delete item.manualReminderStartedAt;
     }
     saveState(true);
     render();
@@ -3882,18 +3892,26 @@
     const item = tasksData().find(t=>t.id===id);
     if(!item || !item.dailyReminder) return;
     item.remindersEnabled = item.remindersEnabled === false;
+    if(item.remindersEnabled === false) delete item.manualReminderStartedAt;
     saveState(true);
     render();
   }
 
-  function sendTaskReminderNow(id, button){
-    if(button) { button.disabled = true; button.textContent = 'Отправка…'; }
-    window.entitiesApi.sendTaskReminderNow(id).then(()=>{
-      showToast('Напоминание отправлено в Telegram');
+  function startTaskReminderTimer(id, button){
+    if(button) { button.disabled = true; button.textContent = 'Запуск…'; }
+    window.entitiesApi.startTaskReminderTimer(id).then(result=>{
+      const item = tasksData().find(t=>t.id===id);
+      if(item){
+        item.manualReminderStartedAt = result.startedAt;
+        item.remindersEnabled = true;
+        saveState(true);
+      }
+      render();
+      showToast('Таймер запущен: первое напоминание через 5 минут');
     }).catch(e=>{
-      showErrorBanner(e.message || 'Не удалось отправить напоминание');
+      showErrorBanner(e.message || 'Не удалось запустить таймер');
     }).finally(()=>{
-      if(button) { button.disabled = false; button.textContent = '↗ Сейчас'; }
+      if(button) { button.disabled = false; button.textContent = '⏱ Запустить'; }
     });
   }
 
@@ -3964,7 +3982,7 @@
       const reminderBtn = e.target.closest('.daily-reminder-toggle');
       if(reminderBtn){ toggleTaskReminders(reminderBtn.dataset.taskId); return; }
       const sendNowBtn = e.target.closest('.daily-send-now-btn');
-      if(sendNowBtn){ sendTaskReminderNow(sendNowBtn.dataset.taskId, sendNowBtn); return; }
+      if(sendNowBtn){ startTaskReminderTimer(sendNowBtn.dataset.taskId, sendNowBtn); return; }
       const addBtn = e.target.closest('.daily-add-btn');
       if(addBtn){ openTaskEditor(null, true); return; }
       const card = e.target.closest('.daily-task-card');
