@@ -179,6 +179,41 @@
       notesSvg.appendChild(path);
     }
   }
+  function wouldCreateNoteCycle(parentId, childId){
+    const children = new Map();
+    (state.noteLinks||[]).forEach(link=>{
+      const list = children.get(link.fromId) || [];
+      list.push(link.toId); children.set(link.fromId,list);
+    });
+    const stack=[childId], seen=new Set();
+    while(stack.length){
+      const id=stack.pop();
+      if(id===parentId) return true;
+      if(seen.has(id)) continue;
+      seen.add(id); (children.get(id)||[]).forEach(next=>stack.push(next));
+    }
+    return false;
+  }
+  function arrangeNotesAsTree(){
+    const byId=Object.fromEntries((state.notes||[]).map(note=>[note.id,note]));
+    const children=new Map(), childIds=new Set();
+    (state.noteLinks||[]).forEach(link=>{
+      if(!byId[link.fromId] || !byId[link.toId]) return;
+      const list=children.get(link.fromId)||[]; list.push(link.toId); children.set(link.fromId,list); childIds.add(link.toId);
+    });
+    const roots=(state.notes||[]).filter(note=>!childIds.has(note.id));
+    const unit=286, level=176;
+    const span=id=>{ const kids=children.get(id)||[]; return Math.max(1,kids.reduce((total,kid)=>total+span(kid),0)); };
+    let cursor=0;
+    const place=(id,depth)=>{
+      const note=byId[id], width=span(id), left=cursor;
+      const kids=children.get(id)||[];
+      if(kids.length){ kids.forEach(kid=>place(kid,depth+1)); note.x=120 + (left + width/2)*unit - 120; }
+      else { note.x=120 + (cursor+.5)*unit - 120; cursor+=1; }
+      note.y=90 + depth*level;
+    };
+    roots.forEach(root=>{ place(root.id,0); cursor+=.45; });
+  }
   function renderNotesBoard(){
     notesCanvas.querySelectorAll('.mind-note,.notes-empty').forEach(el=>el.remove());
     notesCanvas.style.width = NOTES_CANVAS_W + 'px'; notesCanvas.style.height = NOTES_CANVAS_H + 'px';
@@ -194,7 +229,7 @@
       if(note.text){ const text=document.createElement('div'); text.className='mind-note-text'; text.textContent=note.text; card.appendChild(text); }
       const del = document.createElement('button'); del.className='mind-note-delete'; del.type='button'; del.textContent='×'; del.title='Удалить заметку'; del.setAttribute('aria-label','Удалить заметку');
       del.addEventListener('click', e=>{ e.stopPropagation(); openNotesEditor(note.id); }); card.appendChild(del);
-      const connect = document.createElement('button'); connect.className='mind-note-link'; connect.type='button'; connect.textContent='•'; connect.title='Потянуть связь'; connect.setAttribute('aria-label','Связать с другой заметкой');
+      const connect = document.createElement('button'); connect.className='mind-note-link'; connect.type='button'; connect.textContent='•'; connect.title='Добавить дочернюю заметку'; connect.setAttribute('aria-label','Добавить дочернюю заметку');
       connect.addEventListener('mousedown', e=>{ e.preventDefault(); e.stopPropagation(); const p=notesCoords(e.clientX,e.clientY); notesConnecting={from:note,x:p.x,y:p.y}; }); card.appendChild(connect);
       card.addEventListener('mousedown', e=>{
         if(e.target.closest('button')) return;
@@ -239,7 +274,7 @@
   document.addEventListener('mouseup',e=>{
     if(notesPanning){notesPanning=null;notesView.classList.remove('panning');}
     if(notesDragging){const moved=Math.abs(e.clientX-notesDragging.startX)>4||Math.abs(e.clientY-notesDragging.startY)>4;if(moved)saveState();else openNotesEditor(notesDragging.note.id);notesDragging=null;}
-    if(notesConnecting){const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('.mind-note');if(target&&target.dataset.noteId!==notesConnecting.from.id){const fromId=notesConnecting.from.id,toId=target.dataset.noteId,exists=state.noteLinks.some(l=>(l.fromId===fromId&&l.toId===toId)||(l.fromId===toId&&l.toId===fromId));if(!exists){state.noteLinks.push({id:uid(),fromId,toId});saveState(true);showToast('Заметки связаны');}}notesConnecting=null;renderNotesBoard();}
+    if(notesConnecting){const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('.mind-note');if(target&&target.dataset.noteId!==notesConnecting.from.id){const fromId=notesConnecting.from.id,toId=target.dataset.noteId;if(wouldCreateNoteCycle(fromId,toId)){showToast('Нельзя вложить заметку внутрь самой себя');}else{state.noteLinks=state.noteLinks.filter(link=>link.toId!==toId);state.noteLinks.push({id:uid(),fromId,toId});arrangeNotesAsTree();saveState(true);showToast('Заметка добавлена в ветку');}}notesConnecting=null;renderNotesBoard();}
   });
   document.getElementById('notesAddBtn').addEventListener('click',()=>openNotesEditor(null,{x:260,y:180}));
   document.getElementById('notesZoomInBtn').addEventListener('click',()=>{notesZoom=clamp(notesZoom*1.25,.3,2.5);applyNotesTransform();});
