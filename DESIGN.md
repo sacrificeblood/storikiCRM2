@@ -88,6 +88,10 @@ Primary actions are solid red, neutral actions are black-on-hairline, and danger
 
 Active navigation is a red cut line. Tables use compact rows and warm hairlines; badges identify state without becoming decoration.
 
+### Notes board
+
+The Notes tab is a spatial working surface, not a task column: cards are quiet oxblood paper slips, their red edge names the active object, and thin red curves show relationships. Pan and zoom are direct-manipulation controls; creation is available through the primary action and a right-click on open canvas.
+
 ### Forms and overlays
 
 Fields are dark and inset with a visible red focus halo. Dialogs are raised oxblood surfaces. Toasts report actions in a single stable location.

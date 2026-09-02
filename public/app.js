@@ -9,7 +9,7 @@
       return { naming: u.naming || '', url: u.url || '' };
     }).filter(u=>u.url).slice(0, MAX_URLS);
   }
-  let state = { layers: [], fanpages: [], creatives: [], links: [], fanpageRegistry: [], reports: {}, deletedItems: [], currentLayerId: null };
+  let state = { layers: [], fanpages: [], creatives: [], links: [], fanpageRegistry: [], notes: [], noteLinks: [], reports: {}, deletedItems: [], currentLayerId: null };
   const VIEW_STATE_KEY = 'adboard-view-state-v3';
   function loadViewState(){
     try{
@@ -38,6 +38,10 @@
   const tableView = document.getElementById('table-view');
   const fanpageView = document.getElementById('fanpage-view');
   const reportView = document.getElementById('report-view');
+  const notesOuter = document.getElementById('notesOuter');
+  const notesView = document.getElementById('notesView');
+  const notesCanvas = document.getElementById('notesCanvas');
+  const notesSvg = document.getElementById('notesSvg');
   const svg = document.getElementById('board-svg');
   const loadingBox = document.getElementById('loadingBox');
   const tableWrap = document.getElementById('tableWrap');
@@ -143,6 +147,105 @@
     setTimeout(()=>t.classList.remove('show'), 1800);
   }
 
+  // ---------- NOTES BOARD ----------
+  let notesZoom = 1, notesPanX = 42, notesPanY = 36, notesPanning = null, notesDragging = null, notesConnecting = null;
+  const NOTES_CANVAS_W = 3200, NOTES_CANVAS_H = 2200;
+  function notesCoords(clientX, clientY){
+    const rect = notesView.getBoundingClientRect();
+    return { x:(clientX - rect.left - notesPanX) / notesZoom, y:(clientY - rect.top - notesPanY) / notesZoom };
+  }
+  function applyNotesTransform(){
+    notesCanvas.style.transform = `translate(${notesPanX}px, ${notesPanY}px) scale(${notesZoom})`;
+    document.getElementById('notesZoomPct').textContent = Math.round(notesZoom * 100) + '%';
+  }
+  function noteAnchor(note){ return { x:(note.x||0) + 240, y:(note.y||0) + 58 }; }
+  function drawNoteLinks(){
+    notesSvg.innerHTML = '';
+    const byId = Object.fromEntries((state.notes||[]).map(n=>[n.id,n]));
+    (state.noteLinks||[]).forEach(link=>{
+      const from = byId[link.fromId], to = byId[link.toId];
+      if(!from || !to) return;
+      const a = noteAnchor(from), b = noteAnchor(to);
+      const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d', `M ${a.x} ${a.y} Q ${(a.x+b.x)/2} ${(a.y+b.y)/2 + 34} ${b.x - 240} ${b.y}`);
+      path.classList.add('mind-link');
+      notesSvg.appendChild(path);
+    });
+    if(notesConnecting){
+      const a = noteAnchor(notesConnecting.from);
+      const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d', `M ${a.x} ${a.y} Q ${(a.x+notesConnecting.x)/2} ${(a.y+notesConnecting.y)/2 + 34} ${notesConnecting.x} ${notesConnecting.y}`);
+      path.classList.add('mind-link-preview');
+      notesSvg.appendChild(path);
+    }
+  }
+  function renderNotesBoard(){
+    notesCanvas.querySelectorAll('.mind-note,.notes-empty').forEach(el=>el.remove());
+    notesCanvas.style.width = NOTES_CANVAS_W + 'px'; notesCanvas.style.height = NOTES_CANVAS_H + 'px';
+    notesSvg.setAttribute('width', NOTES_CANVAS_W); notesSvg.setAttribute('height', NOTES_CANVAS_H);
+    notesSvg.style.width = NOTES_CANVAS_W + 'px'; notesSvg.style.height = NOTES_CANVAS_H + 'px';
+    const notes = state.notes || [];
+    document.getElementById('notesCount').textContent = notes.length + (notes.length === 1 ? ' заметка' : notes.length > 1 && notes.length < 5 ? ' заметки' : ' заметок');
+    notes.forEach(note=>{
+      const card = document.createElement('article');
+      card.className = 'mind-note'; card.dataset.noteId = note.id;
+      card.style.left = (note.x||120) + 'px'; card.style.top = (note.y||100) + 'px';
+      const title = document.createElement('div'); title.className='mind-note-title'; title.textContent=note.title || 'Без названия'; card.appendChild(title);
+      if(note.text){ const text=document.createElement('div'); text.className='mind-note-text'; text.textContent=note.text; card.appendChild(text); }
+      const del = document.createElement('button'); del.className='mind-note-delete'; del.type='button'; del.textContent='×'; del.title='Удалить заметку'; del.setAttribute('aria-label','Удалить заметку');
+      del.addEventListener('click', e=>{ e.stopPropagation(); openNotesEditor(note.id); }); card.appendChild(del);
+      const connect = document.createElement('button'); connect.className='mind-note-link'; connect.type='button'; connect.textContent='•'; connect.title='Потянуть связь'; connect.setAttribute('aria-label','Связать с другой заметкой');
+      connect.addEventListener('mousedown', e=>{ e.preventDefault(); e.stopPropagation(); const p=notesCoords(e.clientX,e.clientY); notesConnecting={from:note,x:p.x,y:p.y}; }); card.appendChild(connect);
+      card.addEventListener('mousedown', e=>{
+        if(e.target.closest('button')) return;
+        const p=notesCoords(e.clientX,e.clientY);
+        notesDragging={note,offsetX:p.x-(note.x||0),offsetY:p.y-(note.y||0),startX:e.clientX,startY:e.clientY};
+        e.preventDefault(); e.stopPropagation();
+      });
+      card.addEventListener('dblclick', ()=>openNotesEditor(note.id));
+      notesCanvas.appendChild(card);
+    });
+    if(!notes.length){ const empty=document.createElement('div'); empty.className='notes-empty'; empty.textContent='Здесь появятся твои мысли. Нажми «Новая заметка» или кликни правой кнопкой по доске.'; notesCanvas.appendChild(empty); }
+    drawNoteLinks(); applyNotesTransform();
+  }
+  function openNotesEditor(noteId, position){
+    const existing = noteId ? (state.notes||[]).find(n=>n.id===noteId) : null;
+    const overlay=document.createElement('div'); overlay.className='overlay';
+    const modal=document.createElement('div'); modal.className='modal'; modal.innerHTML=`<h3>${existing?'Изменить заметку':'Новая заметка'}</h3>`;
+    const titleField=document.createElement('div'); titleField.className='field'; titleField.innerHTML='<label>Заголовок</label>';
+    const title=document.createElement('input'); title.value=existing?existing.title:''; title.placeholder='Например: идея для оффера'; titleField.appendChild(title); modal.appendChild(titleField);
+    const textField=document.createElement('div'); textField.className='field'; textField.innerHTML='<label>Текст</label>';
+    const text=document.createElement('textarea'); text.rows=6; text.placeholder='Контекст, ссылки, следующие шаги…'; text.value=existing?existing.text||'':''; textField.appendChild(text); modal.appendChild(textField);
+    const actions=document.createElement('div'); actions.className='modal-actions';
+    if(existing){ const remove=document.createElement('button'); remove.className='btn btn-danger'; remove.type='button'; remove.textContent='Удалить'; remove.addEventListener('click',()=>{ state.notes=state.notes.filter(n=>n.id!==existing.id); state.noteLinks=state.noteLinks.filter(l=>l.fromId!==existing.id&&l.toId!==existing.id); saveState(true); render(); document.body.removeChild(overlay); showToast('Заметка удалена'); }); actions.appendChild(remove); }
+    const spacer=document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const cancel=document.createElement('button'); cancel.className='btn btn-plain'; cancel.type='button'; cancel.textContent='Отмена'; cancel.addEventListener('click',()=>document.body.removeChild(overlay)); actions.appendChild(cancel);
+    const save=document.createElement('button'); save.className='btn btn-fan'; save.type='button'; save.textContent='Сохранить'; save.addEventListener('click',()=>{
+      if(!title.value.trim()){ showToast('Введите заголовок'); title.focus(); return; }
+      if(existing){ existing.title=title.value.trim(); existing.text=text.value.trim(); }
+      else { const p=position||{x:160,y:120}; state.notes.push({id:uid(),title:title.value.trim(),text:text.value.trim(),x:Math.max(0,Math.round(p.x-120)),y:Math.max(0,Math.round(p.y-58)),createdAt:Date.now()}); }
+      saveState(true); render(); document.body.removeChild(overlay);
+    }); actions.appendChild(save); modal.appendChild(actions); overlay.appendChild(modal); document.body.appendChild(overlay);
+    overlay.addEventListener('click',e=>{if(e.target===overlay)document.body.removeChild(overlay)}); title.focus();
+  }
+  notesView.addEventListener('wheel',e=>{ e.preventDefault(); const rect=notesView.getBoundingClientRect(), mx=e.clientX-rect.left, my=e.clientY-rect.top, next=clamp(notesZoom*Math.exp(-clamp(e.deltaY,-100,100)*.0016),.3,2.5); notesPanX=mx-(mx-notesPanX)*(next/notesZoom); notesPanY=my-(my-notesPanY)*(next/notesZoom); notesZoom=next; applyNotesTransform(); },{passive:false});
+  notesView.addEventListener('mousedown',e=>{ if(e.target.closest('.mind-note')||e.button!==0)return; notesPanning={x:e.clientX,y:e.clientY,panX:notesPanX,panY:notesPanY}; notesView.classList.add('panning'); });
+  notesView.addEventListener('contextmenu',e=>{ e.preventDefault(); if(!e.target.closest('.mind-note')) openNotesEditor(null,notesCoords(e.clientX,e.clientY)); });
+  document.addEventListener('mousemove',e=>{
+    if(notesPanning){notesPanX=notesPanning.panX+e.clientX-notesPanning.x;notesPanY=notesPanning.panY+e.clientY-notesPanning.y;applyNotesTransform();}
+    if(notesDragging){const p=notesCoords(e.clientX,e.clientY);notesDragging.note.x=Math.round(p.x-notesDragging.offsetX);notesDragging.note.y=Math.round(p.y-notesDragging.offsetY);const el=notesCanvas.querySelector(`[data-note-id="${notesDragging.note.id}"]`);if(el){el.style.left=notesDragging.note.x+'px';el.style.top=notesDragging.note.y+'px';}drawNoteLinks();}
+    if(notesConnecting){const p=notesCoords(e.clientX,e.clientY);notesConnecting.x=p.x;notesConnecting.y=p.y;drawNoteLinks();}
+  });
+  document.addEventListener('mouseup',e=>{
+    if(notesPanning){notesPanning=null;notesView.classList.remove('panning');}
+    if(notesDragging){const moved=Math.abs(e.clientX-notesDragging.startX)>4||Math.abs(e.clientY-notesDragging.startY)>4;if(moved)saveState();else openNotesEditor(notesDragging.note.id);notesDragging=null;}
+    if(notesConnecting){const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('.mind-note');if(target&&target.dataset.noteId!==notesConnecting.from.id){const fromId=notesConnecting.from.id,toId=target.dataset.noteId,exists=state.noteLinks.some(l=>(l.fromId===fromId&&l.toId===toId)||(l.fromId===toId&&l.toId===fromId));if(!exists){state.noteLinks.push({id:uid(),fromId,toId});saveState(true);showToast('Заметки связаны');}}notesConnecting=null;renderNotesBoard();}
+  });
+  document.getElementById('notesAddBtn').addEventListener('click',()=>openNotesEditor(null,{x:260,y:180}));
+  document.getElementById('notesZoomInBtn').addEventListener('click',()=>{notesZoom=clamp(notesZoom*1.25,.3,2.5);applyNotesTransform();});
+  document.getElementById('notesZoomOutBtn').addEventListener('click',()=>{notesZoom=clamp(notesZoom*.8,.3,2.5);applyNotesTransform();});
+  document.getElementById('notesZoomResetBtn').addEventListener('click',()=>{notesZoom=1;notesPanX=42;notesPanY=36;applyNotesTransform();});
+
   function ensureAtLeastOneLayer(){
     if(state.layers.length === 0){
       const l = { id: uid(), name: 'Слой 1' };
@@ -167,6 +270,8 @@
     (state.creatives||[]).forEach(x => push('cre', x));
     (state.links||[]).forEach(x => push('link', x));
     (state.fanpageRegistry||[]).forEach(x => push('freg', x));
+    (state.notes||[]).forEach(x => push('note', x));
+    (state.noteLinks||[]).forEach(x => push('noteLink', x));
 
     const spendRev = (state.reports && state.reports.spendRev) || {};
     Object.keys(spendRev).forEach(monthKey => {
@@ -213,6 +318,8 @@
       return l;
     });
     state.fanpageRegistry = byType.freg || [];
+    state.notes = byType.note || [];
+    state.noteLinks = byType.noteLink || [];
 
     state.reports = {};
     state.reports.spendRev = {};
@@ -424,6 +531,9 @@
     }else if(currentView === 'tasks'){
       setActiveTab('tabTasksBtn');
       document.getElementById('tasksView').style.display='block';
+    }else if(currentView === 'notes'){
+      setActiveTab('tabNotesBtn');
+      notesOuter.style.display='flex';
     }else{
       // 'dashboard', or any old/unknown saved value — Dashboard is the safe default landing view
       currentView = 'dashboard';
@@ -4084,6 +4194,7 @@
       else if(currentView === 'dashboard'){ renderDashboardView(); }
       else if(currentView === 'tasks'){ renderTasksView(); }
       else if(currentView === 'board'){ renderBoard(); }
+      else if(currentView === 'notes'){ renderNotesBoard(); }
       else if(currentView === 'fanpage'){ renderFanpageTable(); }
       else if(currentView === 'table'){ renderTable(); }
     }catch(e){
@@ -4093,13 +4204,14 @@
   }
 
   function setActiveTab(id){
-    ['tabDashboardBtn','tabReportBtn','tabTasksBtn'].forEach(btnId=>{
+    ['tabDashboardBtn','tabReportBtn','tabTasksBtn','tabNotesBtn'].forEach(btnId=>{
       document.getElementById(btnId).classList.toggle('active', btnId===id);
     });
   }
   function hideAllViews(){
     boardOuter.style.display='none'; tableView.style.display='none';
     fanpageView.style.display='none'; reportView.style.display='none';
+    notesOuter.style.display='none';
     document.getElementById('dashboardView').style.display='none';
     document.getElementById('tasksView').style.display='none';
   }
@@ -4124,9 +4236,17 @@
     saveViewState();
     render();
   }
+  function switchToNotesView(){
+    currentView = 'notes';
+    setActiveTab('tabNotesBtn');
+    hideAllViews(); notesOuter.style.display='flex';
+    saveViewState();
+    render();
+  }
   document.getElementById('tabReportBtn').addEventListener('click', switchToReportView);
   document.getElementById('tabDashboardBtn').addEventListener('click', switchToDashboardView);
   document.getElementById('tabTasksBtn').addEventListener('click', switchToTasksView);
+  document.getElementById('tabNotesBtn').addEventListener('click', switchToNotesView);
 
   function showErrorBanner(message){
     let banner = document.getElementById('errorBanner');
