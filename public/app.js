@@ -9,7 +9,7 @@
       return { naming: u.naming || '', url: u.url || '' };
     }).filter(u=>u.url).slice(0, MAX_URLS);
   }
-  let state = { layers: [], fanpages: [], creatives: [], links: [], fanpageRegistry: [], notes: [], noteLinks: [], reports: {}, deletedItems: [], currentLayerId: null };
+  let state = { layers: [], fanpages: [], creatives: [], links: [], fanpageRegistry: [], notes: [], noteLinks: [], launchPlans: [], reports: {}, deletedItems: [], currentLayerId: null };
   const VIEW_STATE_KEY = 'adboard-view-state-v3';
   function loadViewState(){
     try{
@@ -270,6 +270,59 @@
   document.getElementById('notesZoomOutBtn').addEventListener('click',()=>{notesZoom=clamp(notesZoom*.8,.3,2.5);applyNotesTransform();});
   document.getElementById('notesZoomResetBtn').addEventListener('click',()=>{notesZoom=1;notesPanX=42;notesPanY=36;applyNotesTransform();});
 
+  // ---------- DAILY LAUNCH PLAN ----------
+  let tasksSection = 'board';
+  let launchPlanDate = todayStr();
+  function shiftLaunchPlanDate(days){
+    const date = new Date(launchPlanDate + 'T12:00:00'); date.setDate(date.getDate() + days);
+    launchPlanDate = date.toISOString().slice(0,10); renderTasksView();
+  }
+  function formatLaunchPlanDate(dateStr){
+    return new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',weekday:'short'}).format(new Date(dateStr+'T12:00:00'));
+  }
+  function setTasksSection(next){
+    tasksSection=next;
+    document.getElementById('tasksBoardTabBtn').classList.toggle('active',next==='board');
+    document.getElementById('launchPlanTabBtn').classList.toggle('active',next==='launch');
+    document.getElementById('tasksBoardSection').style.display=next==='board'?'block':'none';
+    document.getElementById('launchPlanView').style.display=next==='launch'?'block':'none';
+    if(next==='launch') renderLaunchPlanView();
+  }
+  function renderLaunchPlanView(){
+    document.getElementById('launchPlanDateLabel').textContent=formatLaunchPlanDate(launchPlanDate);
+    const plans=(state.launchPlans||[]).filter(plan=>plan.date===launchPlanDate);
+    const wrap=document.getElementById('launchPlanTableWrap');
+    if(!plans.length){wrap.innerHTML='<div class="launch-plan-empty">На этот день пока нет плана залива.<br>Добавь первую кампанию — она останется в истории даты.</div>';return;}
+    wrap.innerHTML=`<table class="launch-plan-table"><thead><tr><th>Креатив</th><th>GEO</th><th>Кол-во</th><th>Сетап кампании</th><th>Бюджет</th><th></th></tr></thead><tbody>${plans.map(plan=>`<tr data-launch-plan-id="${plan.id}"><td><strong>${escapeHtml(plan.creativeName)}</strong></td><td>${escapeHtml(plan.geo||'—')}</td><td>${escapeHtml(plan.quantity||'—')}</td><td>${escapeHtml(plan.campaignSetup||'—')}</td><td>${escapeHtml(plan.budget||'—')}</td><td class="row-actions"><button class="btn-plain edit-launch-plan" type="button">Изм.</button></td></tr>`).join('')}</tbody></table>`;
+    wrap.querySelectorAll('.edit-launch-plan').forEach(button=>button.addEventListener('click',()=>openLaunchPlanEditor(button.closest('tr').dataset.launchPlanId)));
+  }
+  function openLaunchPlanEditor(id){
+    const existing=id?(state.launchPlans||[]).find(plan=>plan.id===id):null;
+    const overlay=document.createElement('div');overlay.className='overlay';
+    const modal=document.createElement('div');modal.className='modal';modal.innerHTML=`<h3>${existing?'Изменить план':'План залива'}</h3>`;
+    const fields=[
+      ['creativeName','Нейм креатива','Например: AVO_UAE_01','text'],
+      ['geo','GEO','Например: UAE','text'],
+      ['quantity','Количество','Например: 5 кампаний','number'],
+      ['campaignSetup','Сетап кампании','Например: CBO / Android / Broad','text'],
+      ['budget','Бюджет','Например: $300','text']
+    ];
+    const inputs={};
+    fields.forEach(([key,label,placeholder,type])=>{const field=document.createElement('div');field.className='field';field.innerHTML=`<label>${label}</label>`;const input=document.createElement('input');input.type=type;input.placeholder=placeholder;input.value=existing?existing[key]||'':'';if(type==='number')input.min='0';field.appendChild(input);modal.appendChild(field);inputs[key]=input;});
+    const actions=document.createElement('div');actions.className='modal-actions';
+    if(existing){const remove=document.createElement('button');remove.className='btn btn-danger';remove.type='button';remove.textContent='Удалить';remove.addEventListener('click',()=>{state.launchPlans=state.launchPlans.filter(plan=>plan.id!==existing.id);saveState(true);renderLaunchPlanView();document.body.removeChild(overlay);showToast('План удалён');});actions.appendChild(remove);}
+    const spacer=document.createElement('div');spacer.className='spacer';actions.appendChild(spacer);
+    const cancel=document.createElement('button');cancel.className='btn btn-plain';cancel.type='button';cancel.textContent='Отмена';cancel.addEventListener('click',()=>document.body.removeChild(overlay));actions.appendChild(cancel);
+    const save=document.createElement('button');save.className='btn btn-fan';save.type='button';save.textContent='Сохранить';save.addEventListener('click',()=>{if(!inputs.creativeName.value.trim()){showToast('Введите нейм креатива');inputs.creativeName.focus();return;}const payload=Object.fromEntries(Object.entries(inputs).map(([key,input])=>[key,input.value.trim()]));if(existing)Object.assign(existing,payload);else state.launchPlans.push({id:uid(),date:launchPlanDate,...payload,createdAt:Date.now()});saveState(true);renderLaunchPlanView();document.body.removeChild(overlay);showToast(existing?'План обновлён':'План добавлен');});actions.appendChild(save);
+    modal.appendChild(actions);overlay.appendChild(modal);document.body.appendChild(overlay);overlay.addEventListener('click',e=>{if(e.target===overlay)document.body.removeChild(overlay)});inputs.creativeName.focus();
+  }
+  document.getElementById('tasksBoardTabBtn').addEventListener('click',()=>setTasksSection('board'));
+  document.getElementById('launchPlanTabBtn').addEventListener('click',()=>setTasksSection('launch'));
+  document.getElementById('addLaunchPlanBtn').addEventListener('click',()=>openLaunchPlanEditor());
+  document.getElementById('launchPlanPrevBtn').addEventListener('click',()=>shiftLaunchPlanDate(-1));
+  document.getElementById('launchPlanNextBtn').addEventListener('click',()=>shiftLaunchPlanDate(1));
+  document.getElementById('launchPlanTodayBtn').addEventListener('click',()=>{launchPlanDate=todayStr();renderTasksView();});
+
   function ensureAtLeastOneLayer(){
     if(state.layers.length === 0){
       const l = { id: uid(), name: 'Слой 1' };
@@ -296,6 +349,7 @@
     (state.fanpageRegistry||[]).forEach(x => push('freg', x));
     (state.notes||[]).forEach(x => push('note', x));
     (state.noteLinks||[]).forEach(x => push('noteLink', x));
+    (state.launchPlans||[]).forEach(x => push('launchPlan', x));
 
     const spendRev = (state.reports && state.reports.spendRev) || {};
     Object.keys(spendRev).forEach(monthKey => {
@@ -344,6 +398,7 @@
     state.fanpageRegistry = byType.freg || [];
     state.notes = byType.note || [];
     state.noteLinks = byType.noteLink || [];
+    state.launchPlans = byType.launchPlan || [];
 
     state.reports = {};
     state.reports.spendRev = {};
@@ -4090,6 +4145,7 @@
       html += '</details>';
     }
     wrap.innerHTML = html;
+    setTasksSection(tasksSection);
   }
 
   function setupTasksDelegation(){

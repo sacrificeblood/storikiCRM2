@@ -456,6 +456,10 @@
 
   /* TASKS (trello-style board) */
   .tasks-board{display:flex; gap:16px; align-items:flex-start; overflow-x:auto; padding-bottom:10px;}
+  .section-tabs{display:flex;gap:4px;margin:0 0 16px;padding:4px;background:var(--panel);border:1px solid var(--border);border-radius:7px;width:max-content;}
+  .section-tab{border:0;border-radius:4px;background:transparent;color:var(--text-dim);padding:7px 12px;font:700 12px/1 inherit;cursor:pointer;}
+  .section-tab:hover{color:var(--text);}.section-tab.active{background:var(--green);color:#210007;}
+  .launch-plan-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;}.launch-plan-datebar{margin:0;}.launch-plan-datebar #launchPlanDateLabel{min-width:158px;text-align:center;font-weight:750;}.launch-plan-empty{padding:42px 18px;text-align:center;color:var(--text-dim);border:1px dashed var(--border);border-radius:8px;background:var(--panel);}
   .tasks-column{background:var(--panel); border:1px solid var(--border); border-radius:10px; min-width:280px; max-width:280px; padding:12px; flex-shrink:0;}
   .tasks-column-header{display:flex; justify-content:space-between; align-items:center; font-weight:700; font-size:13px; margin-bottom:10px; padding:0 4px;}
   .tasks-column-header .count{color:var(--text-dim); font-weight:400; font-size:11.5px;}
@@ -930,6 +934,11 @@
     </div>
 
     <div id="tasksView" style="display:none;">
+      <div class="section-tabs" id="tasksSectionTabs" role="tablist" aria-label="Разделы задач">
+        <button class="section-tab active" id="tasksBoardTabBtn" type="button" role="tab">Задачи</button>
+        <button class="section-tab" id="launchPlanTabBtn" type="button" role="tab">План залива</button>
+      </div>
+      <div id="tasksBoardSection">
       <div class="filters-card">
         <button class="btn btn-fan" id="addTaskBtn" style="align-self:end;">+ Добавить задачу</button>
         <div class="filter-field" style="flex:1; min-width:200px;">
@@ -944,6 +953,19 @@
       <div class="tasks-workspace">
         <div id="dailyTasksWrap"></div>
         <div id="tasksBoardWrap"></div>
+      </div>
+      </div>
+      <div id="launchPlanView" style="display:none;">
+        <div class="launch-plan-toolbar">
+          <div class="report-month-bar launch-plan-datebar">
+            <button class="report-nav-btn" id="launchPlanPrevBtn" title="Предыдущий день" type="button">←</button>
+            <span id="launchPlanDateLabel">—</span>
+            <button class="report-nav-btn" id="launchPlanNextBtn" title="Следующий день" type="button">→</button>
+            <button class="btn btn-ghost" id="launchPlanTodayBtn" type="button">Сегодня</button>
+          </div>
+          <button class="btn btn-fan" id="addLaunchPlanBtn" type="button">+ Добавить план</button>
+        </div>
+        <div id="launchPlanTableWrap"></div>
       </div>
     </div>
   </main>
