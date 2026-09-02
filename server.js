@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 3000;
 // ---------- Telegram notifications for the Tasks board ----------
 // Fully optional: if TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID aren't set, this quietly does nothing.
 const TASK_COLUMN_LABELS = { todo: 'To Do', in_progress: 'In Progress', done: 'Done' };
+const KYIV_TIMEZONE = 'Europe/Kyiv';
 async function sendTelegramMessage(text){
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -25,6 +26,66 @@ async function sendTelegramMessage(text){
     }
   }catch(e){
     console.error('Telegram send error:', e.message);
+  }
+}
+
+// Atomically reserve an event before delivering it. This is what prevents duplicated
+// messages when the browser sends the same save/delete request twice.
+async function sendTaskTelegramOnce(taskId, eventKey, text){
+  const claim = await pool.query(
+    `INSERT INTO task_notification_log (task_id, event_key) VALUES ($1,$2)
+     ON CONFLICT DO NOTHING RETURNING task_id`,
+    [taskId, eventKey]
+  );
+  if(claim.rowCount) await sendTelegramMessage(text);
+}
+
+function kyivNow(){
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: KYIV_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(new Date()).reduce((out, p) => { out[p.type] = p.value; return out; }, {});
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
+    minuteOfDay: Number(parts.hour) * 60 + Number(parts.minute)
+  };
+}
+
+function validDailyTime(value){ return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || '')); }
+
+async function deliverDueTaskReminders(){
+  const { date, minuteOfDay } = kyivNow();
+  const result = await pool.query(`SELECT id, data FROM entities WHERE type='task'`);
+  for(const row of result.rows){
+    const task = row.data || {};
+    if(!task.dailyReminder || !validDailyTime(task.reminderTime)) continue;
+    if(task.completedForDate === date) continue;
+    const [hours, minutes] = task.reminderTime.split(':').map(Number);
+    const dueAt = hours * 60 + minutes;
+    // Due time plus every five minutes afterwards. The notification log makes this
+    // safe even if the process runs the check more than once in a minute.
+    if(minuteOfDay < dueAt || (minuteOfDay - dueAt) % 5 !== 0) continue;
+    const interval = Math.floor((minuteOfDay - dueAt) / 5);
+    await sendTaskTelegramOnce(
+      row.id,
+      `reminder:${date}:${interval}`,
+      `⏰ <b>Выполни это задание!</b>\n${escapeHtmlTg(task.title || '(без названия)')}` +
+        (task.description ? `\n${escapeHtmlTg(task.description)}` : '')
+    );
+  }
+}
+
+async function seedDefaultDailyTasks(){
+  const defaults = [
+    { id:'daily-spend-yesterday', title:'Внести spend за вчерашний день в таблицу', description:'Заполнить spend за вчерашний день.', reminderTime:'10:00' },
+    { id:'daily-spend-revenue-chat', title:'Выписать spend / revenue в чат', description:'Отправить spend и revenue в чат.', reminderTime:'20:00' }
+  ];
+  for(const task of defaults){
+    await pool.query(
+      `INSERT INTO entities (id, type, data, updated_at) VALUES ($1,'task',$2,now()) ON CONFLICT (id) DO NOTHING`,
+      [task.id, JSON.stringify({ ...task, column:'todo', createdAt:Date.now(), dailyReminder:true })]
+    );
   }
 }
 
@@ -88,9 +149,11 @@ app.put('/api/entities/:type/:id', async (req, res) => {
     if(typeof data !== 'object' || data === null) return res.status(400).json({ error: 'body must be a JSON object' });
 
     let notifyMsg = null;
+    let notifyEventKey = null;
     if(type === 'task'){
       const existing = await pool.query('SELECT data FROM entities WHERE id=$1', [id]);
       if(!existing.rows.length){
+        notifyEventKey = 'created';
         notifyMsg = `🆕 <b>Новая задача:</b> ${escapeHtmlTg(data.title || '(без названия)')}` +
           (data.description ? `\n${escapeHtmlTg(data.description)}` : '');
       }else{
@@ -98,6 +161,7 @@ app.put('/api/entities/:type/:id', async (req, res) => {
         if(oldData.column !== data.column){
           const fromLabel = TASK_COLUMN_LABELS[oldData.column] || oldData.column || '—';
           const toLabel = TASK_COLUMN_LABELS[data.column] || data.column || '—';
+          notifyEventKey = `column:${oldData.column || ''}:${data.column || ''}`;
           notifyMsg = `↪️ <b>${escapeHtmlTg(data.title || '(без названия)')}</b>: ${fromLabel} → ${toLabel}`;
         }
       }
@@ -109,7 +173,7 @@ app.put('/api/entities/:type/:id', async (req, res) => {
       [id, type, JSON.stringify(data)]
     );
 
-    if(notifyMsg) sendTelegramMessage(notifyMsg);
+    if(notifyMsg) await sendTaskTelegramOnce(id, notifyEventKey, notifyMsg);
     res.json({ ok: true });
   }catch(e){
     console.error(e);
@@ -132,7 +196,7 @@ app.delete('/api/entities/:type/:id', async (req, res) => {
       }
     }
     await pool.query('DELETE FROM entities WHERE id=$1', [id]);
-    if(notifyMsg) sendTelegramMessage(notifyMsg);
+    if(notifyMsg) await sendTaskTelegramOnce(id, 'deleted', notifyMsg);
     res.json({ ok: true });
   }catch(e){
     console.error(e);
@@ -273,8 +337,11 @@ app.get('*', (req, res) => {
 });
 
 initSchema()
-  .then(() => {
+  .then(async () => {
+    await seedDefaultDailyTasks();
     app.listen(PORT, () => console.log('Server running on port ' + PORT));
+    deliverDueTaskReminders().catch(e => console.error('task reminder check failed:', e.message));
+    setInterval(() => deliverDueTaskReminders().catch(e => console.error('task reminder check failed:', e.message)), 60 * 1000);
   })
   .catch(e => {
     console.error('Failed to init database schema:', e.message);

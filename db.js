@@ -56,6 +56,17 @@ async function initSchema(){
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  // A durable idempotency guard for Telegram. Browser saves can be retried or overlap,
+  // but one task event must result in one chat message.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS task_notification_log (
+      task_id TEXT NOT NULL,
+      event_key TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (task_id, event_key)
+    );
+  `);
 }
 
 module.exports = { pool, initSchema };

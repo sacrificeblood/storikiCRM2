@@ -3674,10 +3674,28 @@
 
   function tasksData(){ ensureReportsShape(); return state.reports.tasks; }
 
+  function kyivDate(){
+    const parts = new Intl.DateTimeFormat('en', { timeZone:'Europe/Kyiv', year:'numeric', month:'2-digit', day:'2-digit' })
+      .formatToParts(new Date()).reduce((out, p)=>{ out[p.type]=p.value; return out; }, {});
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+  function monthKeyFromDate(date){ return String(date || '').slice(0, 7); }
+  function taskIsDailyDone(task){ return !!task.dailyReminder && task.completedForDate === kyivDate(); }
+  // Finished one-off tasks go to archive when the next month starts. Daily tasks remain
+  // current: their completion applies only to the Kiev calendar day.
+  function taskIsArchived(task){
+    return !task.dailyReminder && task.column === 'done' &&
+      !!task.completedAt && monthKeyFromDate(task.completedAt) < monthKeyFromDate(kyivDate());
+  }
+  function visibleTaskColumn(task){
+    if(task.dailyReminder && !taskIsDailyDone(task)) return 'todo';
+    return task.column || 'todo';
+  }
+
   function openTaskEditor(id){
     const isEdit = !!id;
     const tasks = tasksData();
-    const item = isEdit ? tasks.find(t=>t.id===id) : { id: uid(), title:'', description:'', column:'todo', createdAt: Date.now() };
+    const item = isEdit ? tasks.find(t=>t.id===id) : { id: uid(), title:'', description:'', column:'todo', createdAt: Date.now(), dailyReminder:false, reminderTime:'10:00' };
     if(isEdit && !item) return;
 
     const overlay = document.createElement('div');
@@ -3702,6 +3720,17 @@
     descField.appendChild(descArea);
     modal.appendChild(descField);
 
+    const reminderField = document.createElement('div'); reminderField.className='field';
+    reminderField.innerHTML = `<label style="display:flex; gap:8px; align-items:center; text-transform:none; letter-spacing:0; font-size:13px;"><input type="checkbox"> Ежедневное напоминание</label><div class="muted" style="font-size:11px; margin-top:4px;">После указанного времени Telegram пишет каждые 5 минут, пока задача не отмечена выполненной. Время Киева.</div>`;
+    const reminderCheck = reminderField.querySelector('input');
+    reminderCheck.checked = !!item.dailyReminder;
+    const timeInput = document.createElement('input'); timeInput.type='time'; timeInput.value=item.reminderTime||'10:00';
+    timeInput.style.cssText='margin-top:8px; padding:8px; border:1px solid var(--border); border-radius:6px; background:var(--panel-2); color:var(--text);';
+    timeInput.disabled = !reminderCheck.checked;
+    reminderCheck.addEventListener('change', ()=>{ timeInput.disabled=!reminderCheck.checked; });
+    reminderField.appendChild(timeInput);
+    modal.appendChild(reminderField);
+
     const actions = document.createElement('div'); actions.className='modal-actions';
     if(isEdit){
       const delBtn = document.createElement('button');
@@ -3718,6 +3747,8 @@
       if(!titleInput.value.trim()){ showToast('Введите название задачи'); return; }
       item.title = titleInput.value.trim();
       item.description = descArea.value.trim();
+      item.dailyReminder = reminderCheck.checked;
+      item.reminderTime = timeInput.value || '10:00';
       if(!isEdit) tasks.push(item);
       saveState(true);
       render();
@@ -3746,10 +3777,23 @@
     const tasks = tasksData();
     const item = tasks.find(t=>t.id===id);
     if(!item) return;
-    const idx = TASK_COLUMNS.findIndex(c=>c.key===item.column);
+    const idx = TASK_COLUMNS.findIndex(c=>c.key===visibleTaskColumn(item));
     const newIdx = idx + direction;
     if(newIdx < 0 || newIdx >= TASK_COLUMNS.length) return;
     item.column = TASK_COLUMNS[newIdx].key;
+    if(item.dailyReminder && newIdx === TASK_COLUMNS.length-1) item.completedForDate = kyivDate();
+    if(newIdx === TASK_COLUMNS.length-1) item.completedAt = kyivDate();
+    if(newIdx !== TASK_COLUMNS.length-1) { delete item.completedAt; if(item.dailyReminder) delete item.completedForDate; }
+    saveState(true);
+    render();
+  }
+
+  function completeTask(id){
+    const item = tasksData().find(t=>t.id===id);
+    if(!item) return;
+    item.column = 'done';
+    item.completedAt = kyivDate();
+    if(item.dailyReminder) item.completedForDate = kyivDate();
     saveState(true);
     render();
   }
@@ -3757,9 +3801,15 @@
   function renderTasksView(){
     const tasks = tasksData();
     const wrap = document.getElementById('tasksBoardWrap');
+    const search = (document.getElementById('taskSearchInput').value || '').trim().toLowerCase();
+    const filter = document.getElementById('taskViewFilter').value || 'active';
+    const matches = t => !search || `${t.title||''}\n${t.description||''}`.toLowerCase().includes(search);
+    const archiveTasks = tasks.filter(taskIsArchived).filter(matches);
+    const activeTasks = tasks.filter(t=>!taskIsArchived(t)).filter(matches);
+    const shown = filter === 'archive' ? [] : activeTasks;
     let html = '<div class="tasks-board">';
     TASK_COLUMNS.forEach((col, colIdx) => {
-      const colTasks = tasks.filter(t=>t.column===col.key);
+      const colTasks = shown.filter(t=>visibleTaskColumn(t)===col.key);
       html += `<div class="tasks-column">
         <div class="tasks-column-header"><span>${escapeHtml(col.label)}</span><span class="count">${colTasks.length}</span></div>`;
       if(colTasks.length === 0){
@@ -3769,9 +3819,11 @@
           html += `<div class="task-card" data-task-id="${t.id}">
             <div class="task-title">${escapeHtml(t.title)}</div>
             ${t.description ? `<div class="task-desc">${escapeHtml(t.description)}</div>` : ''}
+            <div class="task-meta">${t.dailyReminder ? `<span class="task-reminder-badge">⏰ ежедневно ${escapeHtml(t.reminderTime||'10:00')} Киев</span>` : ''}</div>
             <div class="task-move-row">
               <button type="button" class="task-move-btn move-left-btn" data-task-id="${t.id}" ${colIdx===0?'disabled':''} title="Назад">←</button>
               <button type="button" class="task-move-btn move-right-btn" data-task-id="${t.id}" ${colIdx===TASK_COLUMNS.length-1?'disabled':''} title="Вперёд">→</button>
+              ${t.dailyReminder && !taskIsDailyDone(t) ? `<button type="button" class="task-complete-btn complete-task-btn" data-task-id="${t.id}">✓ Выполнено</button>` : ''}
               <button type="button" class="task-del-btn" data-task-id="${t.id}" title="Удалить">✕</button>
             </div>
           </div>`;
@@ -3780,6 +3832,11 @@
       html += '</div>';
     });
     html += '</div>';
+    if(filter !== 'active'){
+      html += `<details class="tasks-archive" ${filter==='archive'?'open':''}><summary>Архив выполненных задач (${archiveTasks.length})</summary>`;
+      html += archiveTasks.length ? archiveTasks.map(t=>`<div class="task-card" data-task-id="${t.id}" style="margin-top:10px;"><div class="task-title">${escapeHtml(t.title)}</div>${t.description ? `<div class="task-desc">${escapeHtml(t.description)}</div>` : ''}<div class="task-meta">Выполнено: ${escapeHtml(t.completedAt||'—')}</div></div>`).join('') : '<div class="tasks-empty">В архиве ничего не найдено</div>';
+      html += '</details>';
+    }
     wrap.innerHTML = html;
   }
 
@@ -3790,6 +3847,8 @@
       if(moveLeft && !moveLeft.disabled){ moveTask(moveLeft.dataset.taskId, -1); return; }
       const moveRight = e.target.closest('.move-right-btn');
       if(moveRight && !moveRight.disabled){ moveTask(moveRight.dataset.taskId, 1); return; }
+      const completeBtn = e.target.closest('.complete-task-btn');
+      if(completeBtn){ completeTask(completeBtn.dataset.taskId); return; }
       const delBtn = e.target.closest('.task-del-btn');
       if(delBtn){ deleteTask(delBtn.dataset.taskId); return; }
       const card = e.target.closest('.task-card');
@@ -3797,6 +3856,8 @@
     }));
   }
   document.getElementById('addTaskBtn').addEventListener('click', safe(()=>openTaskEditor(null)));
+  document.getElementById('taskSearchInput').addEventListener('input', ()=>{ if(currentView==='tasks') renderTasksView(); });
+  document.getElementById('taskViewFilter').addEventListener('change', ()=>{ if(currentView==='tasks') renderTasksView(); });
 
   function renderTable(){
     populateFilterOptions();
