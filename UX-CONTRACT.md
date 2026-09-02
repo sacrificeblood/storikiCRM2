@@ -9,4 +9,4 @@
 - Toasts use the single `showToast` system. Server failures use the existing error banner with recovery detail.
 - Tables remain semantic HTML tables; their page owns horizontal overflow on narrow screens.
 - Scrollbars inherit the global dark baseline in `public/index.html`.
-- Notes are stored as independent `note` and `noteLink` entities. A note saves its title, body, and board position; dragging the right-side point onto another note makes it a child of the source note, automatically lays out its branch, prevents cycles, and moves it from any previous parent. Editing and deletion use the note modal.
+- Notes are stored as independent `note` and `noteLink` entities. A note saves its title, body, and board position; dragging the point onto another note creates one undirected relationship. Connection endpoints automatically use the closest card edges, and a connection can be removed with a double-click or keyboard Enter/Delete while focused. Editing and deletion use the note modal.

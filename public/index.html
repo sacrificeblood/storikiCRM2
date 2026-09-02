@@ -138,9 +138,9 @@
   .mind-note-text{margin-top:7px;font-size:12px;line-height:1.45;color:var(--text-dim);white-space:pre-wrap;word-break:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;}
   .mind-note-delete,.mind-note-link{position:absolute;width:23px;height:23px;padding:0;border:1px solid var(--border);border-radius:50%;background:var(--panel-2);color:var(--text-dim);cursor:pointer;font:700 14px/1 inherit;display:grid;place-items:center;}
   .mind-note-delete{top:9px;right:9px;}.mind-note-delete:hover{color:var(--danger);border-color:var(--danger);}
-  .mind-note-link{right:-11px;top:50%;transform:translateY(-50%);color:var(--green);border-color:var(--green-dim);}.mind-note-link:hover{background:var(--green);color:#210007;}
-  .mind-link{fill:none;stroke:var(--green);stroke-width:2.2;stroke-linecap:round;opacity:.8;}
-  .mind-link-preview{fill:none;stroke:var(--amber);stroke-width:2;stroke-dasharray:6 6;}
+  .mind-note-link{right:10px;bottom:9px;color:var(--green);border-color:var(--green-dim);opacity:0;transform:scale(.86);transition:opacity .16s ease,transform .16s ease,background .16s ease;}.mind-note:hover .mind-note-link,.mind-note-link:focus-visible{opacity:1;transform:scale(1);}.mind-note-link:hover{background:var(--green);color:#210007;}
+  .mind-link{fill:none;stroke:url(#mindLinkGradient);stroke-width:2.35;stroke-linecap:round;opacity:.82;filter:drop-shadow(0 0 3px rgba(237,41,75,.36));transition:opacity .16s ease,stroke-width .16s ease;pointer-events:stroke;cursor:pointer;}.mind-link:hover,.mind-link:focus{opacity:1;stroke-width:3.3;outline:none;}
+  .mind-link-preview{fill:none;stroke:var(--amber);stroke-width:2;stroke-dasharray:6 6;filter:drop-shadow(0 0 3px rgba(240,176,109,.35));}
   .notes-empty{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);width:min(360px,calc(100% - 32px));padding:18px;border:1px dashed var(--border);border-radius:8px;background:rgba(21,16,21,.9);color:var(--text-dim);text-align:center;font-size:13px;line-height:1.5;pointer-events:none;}
 
   .signal-line{
@@ -727,7 +727,7 @@
     <div id="notesOuter">
       <div class="notes-topbar">
         <button class="btn btn-fan" id="notesAddBtn" type="button">+ Новая заметка</button>
-        <span>Перетаскивай карточки, тяни точку справа к дочерней заметке</span>
+        <span>Перетаскивай карточки, тяни точку для красивой связи</span>
         <span class="notes-hint" id="notesCount">0 заметок</span>
         <div class="zoom-controls">
           <button id="notesZoomOutBtn" title="Уменьшить" type="button">−</button>

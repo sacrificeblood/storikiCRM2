@@ -90,7 +90,7 @@ Active navigation is a red cut line. Tables use compact rows and warm hairlines;
 
 ### Notes board
 
-The Notes tab is a spatial working surface, not a task column: cards are quiet oxblood paper slips, their red edge names the active object, and thin red curves show parent-to-child branches. Pan and zoom are direct-manipulation controls; creation is available through the primary action and a right-click on open canvas.
+The Notes tab is a spatial working surface, not a task column: cards are quiet oxblood paper slips, their red edge names the active object, and thin warm-gradient curves show relationships. The curves automatically select the nearest clean edge on each card, so the canvas stays legible as notes move. Pan and zoom are direct-manipulation controls; creation is available through the primary action and a right-click on open canvas.
 
 ### Forms and overlays
 
