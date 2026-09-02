@@ -22,10 +22,7 @@
     try{
       localStorage.setItem(VIEW_STATE_KEY, JSON.stringify({
         zoom, panX, panY, currentView,
-        currentReportSheet: typeof currentReportSheet !== 'undefined' ? currentReportSheet : undefined,
-        currentReportMonth: typeof currentReportMonth !== 'undefined' ? currentReportMonth : undefined,
-        currentCreoDay: typeof currentCreoDay !== 'undefined' ? currentCreoDay : undefined,
-        currentCampDay: typeof currentCampDay !== 'undefined' ? currentCampDay : undefined
+        currentReportSheet: typeof currentReportSheet !== 'undefined' ? currentReportSheet : undefined
       }));
     }catch(e){ /* private browsing or storage disabled — just skip persistence */ }
   }
@@ -197,6 +194,7 @@
     });
 
     ((state.reports && state.reports.geoCipher) || []).forEach(x => push('geocipher', x));
+    ((state.reports && state.reports.tasks) || []).forEach(x => push('task', x));
 
     return items;
   }
@@ -254,6 +252,7 @@
     });
 
     state.reports.geoCipher = byType.geocipher || [];
+    state.reports.tasks = byType.task || [];
   }
 
   function snapshotFlat(items){
@@ -409,6 +408,7 @@
     setupCreoDelegation();
     setupCampaignDelegation();
     setupGeoCipherDelegation();
+    setupTasksDelegation();
     setupReportDelegation();
     applyTransform();
     render();
@@ -855,6 +855,9 @@
     }else if(entry.type === 'geocipher'){
       ensureReportsShape();
       state.reports.geoCipher.push(entry.data);
+    }else if(entry.type === 'task'){
+      ensureReportsShape();
+      state.reports.tasks.push(entry.data);
     }
     state.deletedItems = state.deletedItems.filter(t=>t.id!==trashId);
     lastSavedSnapshot.set(trashId, { type: entry.type, key: entry.data.id, json: JSON.stringify(entry.data) });
@@ -1199,7 +1202,7 @@
           : entry.type === 'acc' ? 'Аккаунт (Accs)' : entry.type === 'accsoc' ? 'Soc (Accs)' : entry.type === 'accagent' ? 'Агент (Accs)'
           : entry.type === 'creogeo' ? 'Гео (CreoChecker)' : entry.type === 'creocreative' ? 'Креатив (CreoChecker)'
           : entry.type === 'campgeo' ? 'Гео (Campaign)' : entry.type === 'campcampaign' ? 'Кампания (Campaign)'
-          : entry.type === 'geocipher' ? 'GEO (Шифр)' : 'Связь';
+          : entry.type === 'geocipher' ? 'GEO (Шифр)' : entry.type === 'task' ? 'Задача' : 'Связь';
         const info = document.createElement('div');
         info.style.cssText = 'flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
         info.innerHTML = `<span class="muted" style="font-size:11px;">${typeLabel} · ${timeAgo(entry.deletedAt)}</span><br>${escapeHtml(entry.label||'—')}`;
@@ -1653,9 +1656,9 @@
   }
 
   // ---------- REPORT VIEW (Отчётность) ----------
-  const REPORT_SHEETS = ['spendRev', 'accs', 'creoChecker', 'campaign', 'geoCipher']; // more sheets get added here later, one at a time
+  const REPORT_SHEETS = ['spendRev', 'accs', 'creoChecker', 'campaign', 'geoCipher', 'dashboard', 'tasks']; // more sheets get added here later, one at a time
   let currentReportSheet = (savedView && savedView.currentReportSheet) ? savedView.currentReportSheet : 'spendRev';
-  let currentReportMonth = (savedView && savedView.currentReportMonth) ? savedView.currentReportMonth : null; // 'YYYY-MM'
+  let currentReportMonth = null; // 'YYYY-MM' — always defaults to today's month on load
 
   const MONTH_NAMES = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
   const DOW_NAMES = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
@@ -1706,6 +1709,8 @@
     document.getElementById('creoView').style.display = 'none';
     document.getElementById('campaignView').style.display = 'none';
     document.getElementById('geoCipherView').style.display = 'none';
+    document.getElementById('dashboardView').style.display = 'none';
+    document.getElementById('tasksView').style.display = 'none';
     document.getElementById('reportMonthBar').style.display = 'none';
     document.getElementById('reportTableWrap').style.display = 'none';
     if(currentReportSheet === 'accs'){
@@ -1720,6 +1725,12 @@
     }else if(currentReportSheet === 'geoCipher'){
       document.getElementById('geoCipherView').style.display = 'block';
       renderGeoCipherView();
+    }else if(currentReportSheet === 'dashboard'){
+      document.getElementById('dashboardView').style.display = 'block';
+      renderDashboardView();
+    }else if(currentReportSheet === 'tasks'){
+      document.getElementById('tasksView').style.display = 'block';
+      renderTasksView();
     }else{
       document.getElementById('reportMonthBar').style.display = 'flex';
       document.getElementById('reportTableWrap').style.display = 'block';
@@ -1827,6 +1838,8 @@
     document.getElementById('sheetCreoBtn').classList.toggle('active', sheet==='creoChecker');
     document.getElementById('sheetCampaignBtn').classList.toggle('active', sheet==='campaign');
     document.getElementById('sheetGeoCipherBtn').classList.toggle('active', sheet==='geoCipher');
+    document.getElementById('sheetDashboardBtn').classList.toggle('active', sheet==='dashboard');
+    document.getElementById('sheetTasksBtn').classList.toggle('active', sheet==='tasks');
   }
   document.getElementById('sheetSpendRevBtn').addEventListener('click', safe(()=>{
     currentReportSheet = 'spendRev';
@@ -1855,6 +1868,18 @@
   document.getElementById('sheetGeoCipherBtn').addEventListener('click', safe(()=>{
     currentReportSheet = 'geoCipher';
     setActiveSheetTab('geoCipher');
+    saveViewState();
+    renderReportView();
+  }));
+  document.getElementById('sheetDashboardBtn').addEventListener('click', safe(()=>{
+    currentReportSheet = 'dashboard';
+    setActiveSheetTab('dashboard');
+    saveViewState();
+    renderReportView();
+  }));
+  document.getElementById('sheetTasksBtn').addEventListener('click', safe(()=>{
+    currentReportSheet = 'tasks';
+    setActiveSheetTab('tasks');
     saveViewState();
     renderReportView();
   }));
@@ -1933,6 +1958,7 @@
       state.reports.campaign = { days: {} };
     }
     if(!Array.isArray(state.reports.geoCipher)) state.reports.geoCipher = [];
+    if(!Array.isArray(state.reports.tasks)) state.reports.tasks = [];
   }
 
   function accsData(){ ensureReportsShape(); return state.reports.accs; }
@@ -2382,7 +2408,7 @@
   const CREO_STAT_FIELDS = ['spend','uniqClick','cpuc','leads','cpl','reg','cpr','purch','cfd','rev','profit','roi'];
   const CREO_STAT_LABELS = { spend:'Spend', uniqClick:'Uniq click', cpuc:'Cpuc', leads:'Leads', cpl:'Cpl', reg:'Reg', cpr:'Cpr', purch:'Purch', cfd:'C.FD', rev:'Rev', profit:'Profit', roi:'Roi' };
   let collapsedCreoGroups = new Set();
-  let currentCreoDay = (savedView && savedView.currentCreoDay) ? savedView.currentCreoDay : null; // 'YYYY-MM-DD'
+  let currentCreoDay = null; // 'YYYY-MM-DD' — always defaults to today on load
 
   function fmtDM(dateStr){
     if(!dateStr) return '';
@@ -2929,7 +2955,7 @@
     paused: { label: 'Пауза',   color: 'var(--amber)' }
   };
   let collapsedCampGroups = new Set();
-  let currentCampDay = (savedView && savedView.currentCampDay) ? savedView.currentCampDay : null;
+  let currentCampDay = null; // always defaults to today on load
 
   function campData(){
     ensureReportsShape();
@@ -3529,6 +3555,234 @@
     ['gcSearch'].forEach(id=>document.getElementById(id).value='');
     renderGeoCipherView();
   });
+
+  // ---------- DASHBOARD (read-only overview, computed live from current state) ----------
+  function renderDashboardView(){
+    const wrap = document.getElementById('dashboardWrap');
+    const today = todayStr();
+
+    // Board
+    const fanCount = (state.fanpages||[]).length;
+    const creCount = (state.creatives||[]).length;
+    const linkCount = (state.links||[]).length;
+
+    // Фанпейдж registry
+    const reg = state.fanpageRegistry || [];
+    const regActive = reg.filter(r=>r.status==='active').length;
+
+    // Accs
+    const accs = state.reports.accs || { agents:[], socs:[], accounts:[] };
+    const accStatusCounts = {};
+    (accs.accounts||[]).forEach(a => { accStatusCounts[a.status] = (accStatusCounts[a.status]||0) + 1; });
+
+    // Spend/Rev — today
+    const [ty, tm] = today.split('-');
+    const monthKey = ty + '-' + tm;
+    const tDay = String(Number(today.split('-')[2]));
+    const spendRevToday = (state.reports.spendRev[monthKey] && state.reports.spendRev[monthKey][tDay]) || { spend:0, revenue:0 };
+    const srSpend = Number(spendRevToday.spend)||0, srRev = Number(spendRevToday.revenue)||0;
+    const srProfit = srRev - srSpend;
+    const srRoi = srSpend > 0 ? (srProfit/srSpend*100) : 0;
+
+    // CreoChecker — today
+    const creoToday = (state.reports.creoChecker.days && state.reports.creoChecker.days[today]) || { geos:[], creatives:[] };
+    const creoActive = creoToday.creatives.filter(c=>c.status!=='off').length;
+    const creoOff = creoToday.creatives.filter(c=>c.status==='off').length;
+    let creoSpend=0, creoRev=0;
+    creoToday.creatives.forEach(c=>{ creoSpend += Number(c.spend)||0; creoRev += Number(c.rev)||0; });
+    const creoProfit = creoRev - creoSpend;
+
+    // Campaign — today
+    const campToday = (state.reports.campaign.days && state.reports.campaign.days[today]) || { geos:[], campaigns:[] };
+    const campActive = campToday.campaigns.filter(c=>c.status==='active').length;
+    const campReject = campToday.campaigns.filter(c=>c.status==='reject').length;
+    const campPaused = campToday.campaigns.filter(c=>c.status==='paused').length;
+    const totalAdsets = campToday.campaigns.reduce((s,c)=>s+(Number(c.adsetsCount)||0),0);
+
+    const geoCipherCount = (state.reports.geoCipher||[]).length;
+
+    function card(label, value, sub, color){
+      return `<div class="dash-card"><div class="dash-label">${escapeHtml(label)}</div><div class="dash-value" style="${color?'color:'+color+';':''}">${value}</div>${sub?`<div class="dash-sub">${sub}</div>`:''}</div>`;
+    }
+
+    let html = `<div class="dash-section-title">Сегодня — ${fmtDMY(today)}</div>
+      <div class="dash-grid">
+        ${card('Spend', '$'+fmtPlain(srSpend))}
+        ${card('Revenue', '$'+fmtPlain(srRev))}
+        ${card('Profit', fmtMoney(srProfit), null, pnlColor(srProfit))}
+        ${card('ROI', fmtPct(srRoi), null, pnlColor(srRoi))}
+      </div>
+
+      <div class="dash-section-title">CreoChecker (сегодня)</div>
+      <div class="dash-grid">
+        ${card('Активных креативов', creoActive)}
+        ${card('Офф', creoOff)}
+        ${card('Spend', '$'+fmtPlain(creoSpend))}
+        ${card('Profit', fmtMoney(creoProfit), null, pnlColor(creoProfit))}
+      </div>
+
+      <div class="dash-section-title">Campaign (сегодня)</div>
+      <div class="dash-grid">
+        ${card('Актив', campActive, null, '#4caf6b')}
+        ${card('Реджект', campReject, null, 'var(--danger)')}
+        ${card('Пауза', campPaused, null, 'var(--amber)')}
+        ${card('Всего адсетов', totalAdsets)}
+      </div>
+
+      <div class="dash-section-title">Accs</div>
+      <div class="dash-grid">
+        ${card('Агентов', (accs.agents||[]).length)}
+        ${card('Soc', (accs.socs||[]).length)}
+        ${card('Аккаунтов всего', (accs.accounts||[]).length)}
+        ${card('Approved', accStatusCounts.approved||0, null, '#4caf6b')}
+        ${card('Disabled', accStatusCounts.disabled||0, null, 'var(--danger)')}
+        ${card('Payment error', accStatusCounts.payment_error||0, null, '#e08a3d')}
+      </div>
+
+      <div class="dash-section-title">Доска и справочники</div>
+      <div class="dash-grid">
+        ${card('Фанпейджей на доске', fanCount)}
+        ${card('Креативов на доске', creCount)}
+        ${card('Связей', linkCount)}
+        ${card('В реестре фанпейджей', reg.length, regActive+' используется')}
+        ${card('GEO в шифре', geoCipherCount)}
+      </div>`;
+
+    wrap.innerHTML = html;
+  }
+
+  // ---------- TASKS (Trello-style board for delegating work to the assistant) ----------
+  const TASK_COLUMNS = [
+    { key: 'todo', label: 'To Do' },
+    { key: 'in_progress', label: 'In Progress' },
+    { key: 'done', label: 'Done' }
+  ];
+
+  function tasksData(){ ensureReportsShape(); return state.reports.tasks; }
+
+  function openTaskEditor(id){
+    const isEdit = !!id;
+    const tasks = tasksData();
+    const item = isEdit ? tasks.find(t=>t.id===id) : { id: uid(), title:'', description:'', column:'todo', createdAt: Date.now() };
+    if(isEdit && !item) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `<h3>${isEdit?'Задача':'Новая задача'}</h3>`;
+    const titleField = document.createElement('div'); titleField.className='field';
+    titleField.innerHTML = `<label>Название</label>`;
+    const titleInput = document.createElement('input');
+    titleInput.placeholder = 'например, Проверить крео по Bolivia';
+    titleInput.value = item.title || '';
+    titleField.appendChild(titleInput);
+    modal.appendChild(titleField);
+
+    const descField = document.createElement('div'); descField.className='field';
+    descField.innerHTML = `<label>Описание (необязательно)</label>`;
+    const descArea = document.createElement('textarea');
+    descArea.rows = 4;
+    descArea.style.cssText = 'padding:9px 10px; border:1px solid var(--border); border-radius:6px; font-size:14px; background:var(--panel-2); color:var(--text); font-family:inherit; resize:vertical;';
+    descArea.value = item.description || '';
+    descField.appendChild(descArea);
+    modal.appendChild(descField);
+
+    const actions = document.createElement('div'); actions.className='modal-actions';
+    if(isEdit){
+      const delBtn = document.createElement('button');
+      delBtn.className='btn btn-danger'; delBtn.textContent='Удалить'; delBtn.type='button';
+      delBtn.addEventListener('click', safe(()=>{ document.body.removeChild(overlay); deleteTask(id); }));
+      actions.appendChild(delBtn);
+    }
+    const spacer = document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
+    const cancelBtn = document.createElement('button'); cancelBtn.className='btn btn-plain'; cancelBtn.textContent='Отмена'; cancelBtn.type='button';
+    cancelBtn.addEventListener('click', safe(()=>document.body.removeChild(overlay)));
+    actions.appendChild(cancelBtn);
+    const saveBtn = document.createElement('button'); saveBtn.className='btn btn-fan'; saveBtn.textContent='Сохранить'; saveBtn.type='button';
+    saveBtn.addEventListener('click', safe(()=>{
+      if(!titleInput.value.trim()){ showToast('Введите название задачи'); return; }
+      item.title = titleInput.value.trim();
+      item.description = descArea.value.trim();
+      if(!isEdit) tasks.push(item);
+      saveState(true);
+      render();
+      document.body.removeChild(overlay);
+    }));
+    actions.appendChild(saveBtn);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) document.body.removeChild(overlay); });
+    titleInput.focus();
+  }
+
+  function deleteTask(id){
+    const tasks = tasksData();
+    const item = tasks.find(t=>t.id===id);
+    if(!item) return;
+    if(!confirm(`Удалить задачу "${item.title}"?`)) return;
+    pushToTrash('task', item, item.title);
+    state.reports.tasks = tasks.filter(t=>t.id!==id);
+    saveState(true);
+    render();
+  }
+
+  function moveTask(id, direction){
+    const tasks = tasksData();
+    const item = tasks.find(t=>t.id===id);
+    if(!item) return;
+    const idx = TASK_COLUMNS.findIndex(c=>c.key===item.column);
+    const newIdx = idx + direction;
+    if(newIdx < 0 || newIdx >= TASK_COLUMNS.length) return;
+    item.column = TASK_COLUMNS[newIdx].key;
+    saveState(true);
+    render();
+  }
+
+  function renderTasksView(){
+    const tasks = tasksData();
+    const wrap = document.getElementById('tasksBoardWrap');
+    let html = '<div class="tasks-board">';
+    TASK_COLUMNS.forEach((col, colIdx) => {
+      const colTasks = tasks.filter(t=>t.column===col.key);
+      html += `<div class="tasks-column">
+        <div class="tasks-column-header"><span>${escapeHtml(col.label)}</span><span class="count">${colTasks.length}</span></div>`;
+      if(colTasks.length === 0){
+        html += `<div class="tasks-empty">Пусто</div>`;
+      }else{
+        colTasks.forEach(t => {
+          html += `<div class="task-card" data-task-id="${t.id}">
+            <div class="task-title">${escapeHtml(t.title)}</div>
+            ${t.description ? `<div class="task-desc">${escapeHtml(t.description)}</div>` : ''}
+            <div class="task-move-row">
+              <button type="button" class="task-move-btn move-left-btn" data-task-id="${t.id}" ${colIdx===0?'disabled':''} title="Назад">←</button>
+              <button type="button" class="task-move-btn move-right-btn" data-task-id="${t.id}" ${colIdx===TASK_COLUMNS.length-1?'disabled':''} title="Вперёд">→</button>
+              <button type="button" class="task-del-btn" data-task-id="${t.id}" title="Удалить">✕</button>
+            </div>
+          </div>`;
+        });
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    wrap.innerHTML = html;
+  }
+
+  function setupTasksDelegation(){
+    const wrap = document.getElementById('tasksBoardWrap');
+    wrap.addEventListener('click', safe((e)=>{
+      const moveLeft = e.target.closest('.move-left-btn');
+      if(moveLeft && !moveLeft.disabled){ moveTask(moveLeft.dataset.taskId, -1); return; }
+      const moveRight = e.target.closest('.move-right-btn');
+      if(moveRight && !moveRight.disabled){ moveTask(moveRight.dataset.taskId, 1); return; }
+      const delBtn = e.target.closest('.task-del-btn');
+      if(delBtn){ deleteTask(delBtn.dataset.taskId); return; }
+      const card = e.target.closest('.task-card');
+      if(card){ openTaskEditor(card.dataset.taskId); return; }
+    }));
+  }
+  document.getElementById('addTaskBtn').addEventListener('click', safe(()=>openTaskEditor(null)));
 
   function renderTable(){
     populateFilterOptions();
