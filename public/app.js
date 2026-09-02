@@ -4204,5 +4204,17 @@
     showErrorBanner((e.reason && e.reason.message) ? e.reason.message : String(e.reason));
   });
 
+  function applyMinonBrand(){
+    const heading = document.querySelector('header h1');
+    if(!heading) return;
+    const icon = heading.querySelector('img');
+    if(!icon) return;
+    icon.alt = 'Minon Devils';
+    const brand = document.createElement('span');
+    brand.className = 'minon-brand-lockup';
+    brand.innerHTML = '<strong>MINON</strong><em>DEVILS</em><small>TRAFFIC LEDGER</small>';
+    heading.replaceChildren(icon, brand);
+  }
+  applyMinonBrand();
   window.__startBoard = loadState;
 })();

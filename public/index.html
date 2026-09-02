@@ -603,6 +603,58 @@
   .badge-fan,.badge-cre,.badge-layer{border-radius:999px;padding:3px 9px;box-shadow:inset 0 1px rgba(255,255,255,.1);}
   .result-count{font-variant-numeric:tabular-nums;}
   @media(max-width:680px){header h1{min-width:230px;}header h1::after{font-size:18px;}header h1::before{margin-top:32px;}}
+  /* MINON DEVILS — AFTER-HOURS LEDGER */
+  :root{--bg:#09070a;--bg-2:#100b10;--panel:#151015;--panel-2:#20171d;--border:rgba(245,236,232,.13);--border-soft:rgba(245,236,232,.075);--green:#ed294b;--green-dim:#80172b;--green-glow:rgba(237,41,75,.23);--teal:#89b8ff;--teal-glow:rgba(137,184,255,.16);--text:#f5ece8;--text-dim:#aa9ca2;--danger:#ff6b7f;--danger-glow:rgba(255,107,127,.22);--amber:#f0b06d;}
+  body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(ellipse 70% 50% at 3% -10%,rgba(123,19,39,.38),transparent 60%),linear-gradient(118deg,#09070a 0%,#0c070b 50%,#080609 100%);}
+  body::before{inset:0;background:linear-gradient(90deg,transparent 0 49.88%,rgba(255,255,255,.025) 49.9% 50.1%,transparent 50.12%),linear-gradient(180deg,rgba(237,41,75,.095),transparent 150px);filter:none;animation:none;}
+  header{margin:0;padding:17px 28px;border:0;border-bottom:1px solid var(--border);border-radius:0;background:linear-gradient(90deg,rgba(17,10,15,.98),rgba(11,8,12,.94));box-shadow:inset 0 -1px rgba(255,255,255,.025);backdrop-filter:none;position:relative;overflow:hidden;}
+  header::after{content:"";position:absolute;left:0;bottom:0;width:clamp(160px,21vw,330px);height:2px;background:linear-gradient(90deg,#ed294b,rgba(237,41,75,.25),transparent);box-shadow:0 0 18px rgba(237,41,75,.68);}
+  header h1{position:relative;min-width:275px!important;gap:12px!important;color:var(--text)!important;}
+  header h1::after,header h1::before{content:none!important;display:none!important;}
+  header h1>span{display:block!important;}
+  header h1 img{width:39px!important;height:39px!important;padding:2px!important;border-radius:7px!important;background:#070609!important;border:1px solid rgba(237,41,75,.4)!important;box-shadow:0 0 0 3px rgba(237,41,75,.07),0 12px 25px rgba(0,0,0,.38)!important;}
+  .minon-brand-lockup{display:grid!important;grid-template-columns:auto auto;grid-template-rows:22px 12px;align-items:baseline;column-gap:7px;line-height:1;}
+  .minon-brand-lockup strong,.minon-brand-lockup em{font-family:"Arial Black",Arial,sans-serif;font-size:22px;font-style:normal;letter-spacing:-1.35px;color:#f5ece8;}
+  .minon-brand-lockup em{color:#ed294b;}
+  .minon-brand-lockup small{grid-column:1/-1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:8px;letter-spacing:2.1px;color:#a87882;font-weight:700;}
+  .tabs{background:#0a070a;border:1px solid rgba(245,236,232,.12);border-radius:6px;padding:3px;box-shadow:none;}
+  .tab-btn{border-radius:3px;color:#9e8d93;font-size:12px;font-weight:750;letter-spacing:.3px;text-transform:uppercase;}
+  .tab-btn.active{background:#ed294b;color:#fff;box-shadow:none;}
+  .tab-btn.active::before{content:none!important;}
+  .btn{border-radius:5px;font-weight:760;box-shadow:none!important;transition:transform .14s ease,background .14s ease,border-color .14s ease,color .14s ease;}
+  .btn:active{transform:translateY(1px) scale(.98);}
+  .btn-fan{background:#ed294b;color:#fff;border-color:#f75470;}
+  .btn-fan:hover{background:#ff3b5c;}
+  .btn-ghost,.btn-plain{background:#110c10;color:#d9cbd0;border-color:var(--border);}
+  .btn-ghost:hover,.btn-plain:hover{background:#21151c;border-color:rgba(237,41,75,.5);color:#fff;}
+  .btn-danger{background:#3d111e;border-color:#7c2336;color:#ffb3c0;}
+  .btn-layer{background:#2f2117;border-color:#6f492a;color:#f0b06d;}
+  main{padding:0;background:transparent;}
+  #report-view,#table-view,#fanpage-view,#dashboardView,#tasksView{margin:0;border:0;border-radius:0;background:transparent;box-shadow:none;}
+  #table-view,#fanpage-view,#dashboardView,#tasksView{padding:22px 28px 36px;}
+  .filters-card{background:#120d11;border:1px solid var(--border);border-radius:8px;box-shadow:inset 3px 0 #ed294b;}
+  table{background:#100b0f;border-radius:8px;border-color:var(--border);}
+  thead tr{background:#1a1117;}
+  th{color:#dcb6be;border-bottom-color:rgba(237,41,75,.3);}
+  td{border-bottom-color:var(--border-soft);}
+  tbody tr:hover{background:rgba(237,41,75,.055);}
+  .dash-card,.tasks-column,.daily-tasks-panel{background:#120d11;border:1px solid var(--border);border-radius:8px;box-shadow:none;}
+  .dash-card::after{display:none;}
+  .tasks-column{border-top:2px solid rgba(237,41,75,.55);}
+  .task-card,.daily-task-card{background:#1b1218;border:1px solid rgba(245,236,232,.1);border-radius:6px;box-shadow:none;}
+  .task-card:hover,.daily-task-card:hover{transform:translateY(-2px) scale(1.005);border-color:rgba(237,41,75,.62);box-shadow:0 13px 22px rgba(0,0,0,.22)!important;}
+  .daily-tasks-title{background:linear-gradient(90deg,rgba(237,41,75,.14),transparent);}
+  .task-reminder-badge{background:rgba(240,176,109,.09);}
+  input,textarea,select,.filter-field input,.filter-field select{background:#0c080b!important;border-color:rgba(245,236,232,.14)!important;color:#f5ece8!important;box-shadow:none!important;}
+  input:focus,textarea:focus,select:focus,.filter-field input:focus,.filter-field select:focus{outline:1px solid #ed294b!important;box-shadow:0 0 0 3px rgba(237,41,75,.16)!important;}
+  .modal{background:#171016!important;border:1px solid rgba(245,236,232,.16)!important;border-radius:9px!important;box-shadow:0 26px 70px rgba(0,0,0,.66)!important;}
+  .toast{border-radius:5px;background:#1b1218;box-shadow:inset 3px 0 #ed294b,0 16px 36px rgba(0,0,0,.4)!important;}
+  *{scrollbar-color:#6d2636 #0c080b;scrollbar-width:thin;}
+  *::-webkit-scrollbar{width:10px;height:10px;}
+  *::-webkit-scrollbar-track{background:#0c080b;}
+  *::-webkit-scrollbar-thumb{background:#5b1e2e;border:2px solid #0c080b;border-radius:10px;}
+  *::-webkit-scrollbar-thumb:hover{background:#8e2b42;}
+  @media(max-width:680px){header{padding:14px 16px;}header h1{min-width:220px!important;}.minon-brand-lockup strong,.minon-brand-lockup em{font-size:18px;}#table-view,#fanpage-view,#dashboardView,#tasksView{padding:14px 12px 28px;}}
 </style>
 </head>
 <body>
