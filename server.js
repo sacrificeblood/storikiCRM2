@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 
 // ---------- Telegram notifications for the Tasks board ----------
 // Fully optional: if TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID aren't set, this quietly does nothing.
-const TASK_COLUMN_LABELS = { todo: 'To Do', in_progress: 'In Progress', done: 'Done' };
+const TASK_COLUMN_LABELS = { todo: 'To Do', in_progress: 'In Progress', confirm: 'Подтвердить', done: 'Done' };
 const KYIV_TIMEZONE = 'Europe/Kyiv';
 async function sendTelegramMessage(text){
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -59,7 +59,7 @@ async function deliverDueTaskReminders(){
   const result = await pool.query(`SELECT id, data FROM entities WHERE type='task'`);
   for(const row of result.rows){
     const task = row.data || {};
-    if(!task.dailyReminder || !validDailyTime(task.reminderTime)) continue;
+    if(!task.dailyReminder || task.remindersEnabled === false || !validDailyTime(task.reminderTime)) continue;
     if(task.completedForDate === date) continue;
     const [hours, minutes] = task.reminderTime.split(':').map(Number);
     const dueAt = hours * 60 + minutes;
@@ -84,7 +84,7 @@ async function seedDefaultDailyTasks(){
   for(const task of defaults){
     await pool.query(
       `INSERT INTO entities (id, type, data, updated_at) VALUES ($1,'task',$2,now()) ON CONFLICT (id) DO NOTHING`,
-      [task.id, JSON.stringify({ ...task, column:'todo', createdAt:Date.now(), dailyReminder:true })]
+      [task.id, JSON.stringify({ ...task, column:'todo', createdAt:Date.now(), dailyReminder:true, remindersEnabled:true })]
     );
   }
 }
