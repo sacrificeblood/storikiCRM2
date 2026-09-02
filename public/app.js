@@ -10,7 +10,7 @@
     }).filter(u=>u.url).slice(0, MAX_URLS);
   }
   let state = { layers: [], fanpages: [], creatives: [], links: [], fanpageRegistry: [], reports: {}, deletedItems: [], currentLayerId: null };
-  const VIEW_STATE_KEY = 'adboard-view-state-v2';
+  const VIEW_STATE_KEY = 'adboard-view-state-v3';
   function loadViewState(){
     try{
       const raw = localStorage.getItem(VIEW_STATE_KEY);
@@ -28,7 +28,7 @@
   }
   const savedView = loadViewState();
 
-  let currentView = savedView && savedView.currentView ? savedView.currentView : 'report';
+  let currentView = savedView && savedView.currentView ? savedView.currentView : 'dashboard';
   let dragging = null;
   let connecting = null;
 
@@ -389,18 +389,18 @@
 
     loadingBox.style.display='none';
     hideAllViews();
-    if(currentView === 'table'){
-      setActiveTab('tabTableBtn');
-      tableView.style.display='block';
-    }else if(currentView === 'fanpage'){
-      setActiveTab('tabFanpageBtn');
-      fanpageView.style.display='block';
-    }else if(currentView === 'report'){
+    if(currentView === 'report'){
       setActiveTab('tabReportBtn');
       setActiveSheetTab(currentReportSheet);
       reportView.style.display='block';
+    }else if(currentView === 'tasks'){
+      setActiveTab('tabTasksBtn');
+      document.getElementById('tasksView').style.display='block';
     }else{
-      boardOuter.style.display='flex';
+      // 'dashboard', or any old/unknown saved value — Dashboard is the safe default landing view
+      currentView = 'dashboard';
+      setActiveTab('tabDashboardBtn');
+      document.getElementById('dashboardView').style.display='block';
     }
     setupTableDelegation();
     setupFanpageTableDelegation();
@@ -1666,8 +1666,8 @@
   }
 
   // ---------- REPORT VIEW (Отчётность) ----------
-  const REPORT_SHEETS = ['spendRev', 'accs', 'creoChecker', 'campaign', 'geoCipher', 'dashboard', 'tasks']; // more sheets get added here later, one at a time
-  let currentReportSheet = (savedView && savedView.currentReportSheet) ? savedView.currentReportSheet : 'dashboard';
+  const REPORT_SHEETS = ['spendRev', 'accs', 'creoChecker', 'campaign', 'geoCipher']; // more sheets get added here later, one at a time
+  let currentReportSheet = (savedView && savedView.currentReportSheet) ? savedView.currentReportSheet : 'spendRev';
   let currentReportMonth = null; // 'YYYY-MM' — always defaults to today's month on load
 
   const MONTH_NAMES = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
@@ -1719,8 +1719,6 @@
     document.getElementById('creoView').style.display = 'none';
     document.getElementById('campaignView').style.display = 'none';
     document.getElementById('geoCipherView').style.display = 'none';
-    document.getElementById('dashboardView').style.display = 'none';
-    document.getElementById('tasksView').style.display = 'none';
     document.getElementById('reportMonthBar').style.display = 'none';
     document.getElementById('reportTableWrap').style.display = 'none';
     if(currentReportSheet === 'accs'){
@@ -1735,12 +1733,6 @@
     }else if(currentReportSheet === 'geoCipher'){
       document.getElementById('geoCipherView').style.display = 'block';
       renderGeoCipherView();
-    }else if(currentReportSheet === 'dashboard'){
-      document.getElementById('dashboardView').style.display = 'block';
-      renderDashboardView();
-    }else if(currentReportSheet === 'tasks'){
-      document.getElementById('tasksView').style.display = 'block';
-      renderTasksView();
     }else{
       document.getElementById('reportMonthBar').style.display = 'flex';
       document.getElementById('reportTableWrap').style.display = 'block';
@@ -1848,8 +1840,6 @@
     document.getElementById('sheetCreoBtn').classList.toggle('active', sheet==='creoChecker');
     document.getElementById('sheetCampaignBtn').classList.toggle('active', sheet==='campaign');
     document.getElementById('sheetGeoCipherBtn').classList.toggle('active', sheet==='geoCipher');
-    document.getElementById('sheetDashboardBtn').classList.toggle('active', sheet==='dashboard');
-    document.getElementById('sheetTasksBtn').classList.toggle('active', sheet==='tasks');
   }
   document.getElementById('sheetSpendRevBtn').addEventListener('click', safe(()=>{
     currentReportSheet = 'spendRev';
@@ -1878,18 +1868,6 @@
   document.getElementById('sheetGeoCipherBtn').addEventListener('click', safe(()=>{
     currentReportSheet = 'geoCipher';
     setActiveSheetTab('geoCipher');
-    saveViewState();
-    renderReportView();
-  }));
-  document.getElementById('sheetDashboardBtn').addEventListener('click', safe(()=>{
-    currentReportSheet = 'dashboard';
-    setActiveSheetTab('dashboard');
-    saveViewState();
-    renderReportView();
-  }));
-  document.getElementById('sheetTasksBtn').addEventListener('click', safe(()=>{
-    currentReportSheet = 'tasks';
-    setActiveSheetTab('tasks');
     saveViewState();
     renderReportView();
   }));
@@ -3879,10 +3857,12 @@
   // ---------- VIEW SWITCH ----------
   function render(){
     try{
-      if(currentView === 'board'){ renderBoard(); }
+      if(currentView === 'report'){ renderReportView(); }
+      else if(currentView === 'dashboard'){ renderDashboardView(); }
+      else if(currentView === 'tasks'){ renderTasksView(); }
+      else if(currentView === 'board'){ renderBoard(); }
       else if(currentView === 'fanpage'){ renderFanpageTable(); }
-      else if(currentView === 'report'){ renderReportView(); }
-      else { renderTable(); }
+      else if(currentView === 'table'){ renderTable(); }
     }catch(e){
       console.error(e);
       showErrorBanner((e && e.message) ? e.message : String(e));
@@ -3890,34 +3870,15 @@
   }
 
   function setActiveTab(id){
-    ['tabBoardBtn','tabTableBtn','tabFanpageBtn','tabReportBtn'].forEach(btnId=>{
+    ['tabDashboardBtn','tabReportBtn','tabTasksBtn'].forEach(btnId=>{
       document.getElementById(btnId).classList.toggle('active', btnId===id);
     });
   }
   function hideAllViews(){
     boardOuter.style.display='none'; tableView.style.display='none';
     fanpageView.style.display='none'; reportView.style.display='none';
-  }
-  function switchToBoardView(){
-    currentView = 'board';
-    setActiveTab('tabBoardBtn');
-    hideAllViews(); boardOuter.style.display='flex';
-    saveViewState();
-    render();
-  }
-  function switchToTableView(){
-    currentView = 'table';
-    setActiveTab('tabTableBtn');
-    hideAllViews(); tableView.style.display='block';
-    saveViewState();
-    render();
-  }
-  function switchToFanpageView(){
-    currentView = 'fanpage';
-    setActiveTab('tabFanpageBtn');
-    hideAllViews(); fanpageView.style.display='block';
-    saveViewState();
-    render();
+    document.getElementById('dashboardView').style.display='none';
+    document.getElementById('tasksView').style.display='none';
   }
   function switchToReportView(){
     currentView = 'report';
@@ -3926,10 +3887,23 @@
     saveViewState();
     render();
   }
-  document.getElementById('tabBoardBtn').addEventListener('click', switchToBoardView);
-  document.getElementById('tabTableBtn').addEventListener('click', switchToTableView);
-  document.getElementById('tabFanpageBtn').addEventListener('click', switchToFanpageView);
+  function switchToDashboardView(){
+    currentView = 'dashboard';
+    setActiveTab('tabDashboardBtn');
+    hideAllViews(); document.getElementById('dashboardView').style.display='block';
+    saveViewState();
+    render();
+  }
+  function switchToTasksView(){
+    currentView = 'tasks';
+    setActiveTab('tabTasksBtn');
+    hideAllViews(); document.getElementById('tasksView').style.display='block';
+    saveViewState();
+    render();
+  }
   document.getElementById('tabReportBtn').addEventListener('click', switchToReportView);
+  document.getElementById('tabDashboardBtn').addEventListener('click', switchToDashboardView);
+  document.getElementById('tabTasksBtn').addEventListener('click', switchToTasksView);
 
   function showErrorBanner(message){
     let banner = document.getElementById('errorBanner');
@@ -3965,8 +3939,9 @@
     };
   }
 
-  document.getElementById('addFanBtn').addEventListener('click', safe(()=>addNodePrompt('fan')));
-  document.getElementById('addCreBtn').addEventListener('click', safe(()=>addNodePrompt('cre')));
+  // (Доска creation buttons moved off the always-visible header — Доска itself is no longer
+  // a reachable tab, so these listeners are gone too. The underlying board code/data stays
+  // intact in case it's ever needed again.)
   document.getElementById('trashBtn').addEventListener('click', safe(openTrashManager));
   document.getElementById('backupsBtn').addEventListener('click', safe(()=>askBackupsPassword(openBackupsManager)));
   document.getElementById('resetBtn').addEventListener('click', ()=>{
