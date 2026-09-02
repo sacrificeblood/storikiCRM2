@@ -90,7 +90,7 @@ Active navigation is a red cut line. Tables use compact rows and warm hairlines;
 
 ### Daily launch plan
 
-The launch plan lives as a peer tab to Tasks, using a date strip and Campaign-like expandable GEO groups. GEO stays neutral structural context, while creative naming is the blue high-contrast badge; quantity, setup, and budget remain quiet supporting data for rapid daily scanning.
+The launch plan lives as a peer tab to Tasks, using a date strip and expandable creative-name groups. Creative naming is the blue high-contrast badge and primary scan target; GEO stays as neutral row context, while quantity, setup, and budget remain quiet supporting data.
 
 ### Notes board
 
