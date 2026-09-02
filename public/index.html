@@ -645,6 +645,12 @@
   .task-card:hover,.daily-task-card:hover{transform:translateY(-2px) scale(1.005);border-color:rgba(237,41,75,.62);box-shadow:0 13px 22px rgba(0,0,0,.22)!important;}
   .daily-tasks-title{background:linear-gradient(90deg,rgba(237,41,75,.14),transparent);}
   .task-reminder-badge{background:rgba(240,176,109,.09);}
+  /* Keep the entire task workflow inside the viewport: the board flexes before the page does. */
+  .tasks-workspace{gap:18px;min-width:0;}
+  .daily-tasks-panel{width:clamp(238px,20vw,300px);flex:0 1 clamp(238px,20vw,300px);min-width:0;}
+  #tasksBoardWrap{min-width:0;}
+  .tasks-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;overflow:visible;padding-bottom:0;}
+  .tasks-column{min-width:0;max-width:none;width:auto;}
   input,textarea,select,.filter-field input,.filter-field select{background:#0c080b!important;border-color:rgba(245,236,232,.14)!important;color:#f5ece8!important;box-shadow:none!important;}
   input:focus,textarea:focus,select:focus,.filter-field input:focus,.filter-field select:focus{outline:1px solid #ed294b!important;box-shadow:0 0 0 3px rgba(237,41,75,.16)!important;}
   .modal{background:#171016!important;border:1px solid rgba(245,236,232,.16)!important;border-radius:9px!important;box-shadow:0 26px 70px rgba(0,0,0,.66)!important;}
@@ -654,7 +660,8 @@
   *::-webkit-scrollbar-track{background:#0c080b;}
   *::-webkit-scrollbar-thumb{background:#5b1e2e;border:2px solid #0c080b;border-radius:10px;}
   *::-webkit-scrollbar-thumb:hover{background:#8e2b42;}
-  @media(max-width:680px){header{padding:14px 16px;}header h1{min-width:220px!important;}.minon-brand-lockup strong,.minon-brand-lockup em{font-size:18px;}#table-view,#fanpage-view,#dashboardView,#tasksView{padding:14px 12px 28px;}}
+  @media(max-width:850px){.tasks-board{grid-template-columns:repeat(2,minmax(0,1fr));}.daily-tasks-panel{width:100%;flex-basis:auto;}}
+  @media(max-width:680px){header{padding:14px 16px;}header h1{min-width:220px!important;}.minon-brand-lockup strong,.minon-brand-lockup em{font-size:18px;}#table-view,#fanpage-view,#dashboardView,#tasksView{padding:14px 12px 28px;}.tasks-board{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
