@@ -3675,10 +3675,21 @@
 
   function tasksData(){ ensureReportsShape(); return state.reports.tasks; }
 
-  function kyivDate(){
+  let serverClockOffset = 0;
+  function appNow(){ return new Date(Date.now() + serverClockOffset); }
+  function kyivDateFor(date){
     const parts = new Intl.DateTimeFormat('en', { timeZone:'Europe/Kyiv', year:'numeric', month:'2-digit', day:'2-digit' })
-      .formatToParts(new Date()).reduce((out, p)=>{ out[p.type]=p.value; return out; }, {});
+      .formatToParts(date).reduce((out, p)=>{ out[p.type]=p.value; return out; }, {});
     return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+  function kyivDate(){ return kyivDateFor(appNow()); }
+  async function syncServerClock(){
+    const response = await fetch('/api/time', { credentials:'include', cache:'no-store' });
+    if(!response.ok) throw new Error('Не удалось получить время сервера');
+    const data = await response.json();
+    const serverMs = new Date(data.now).getTime();
+    if(Number.isFinite(serverMs)) serverClockOffset = serverMs - Date.now();
+    if(currentView === 'tasks') refreshReminderCountdowns();
   }
   function monthKeyFromDate(date){ return String(date || '').slice(0, 7); }
   function taskIsDailyDone(task){ return !!task.dailyReminder && task.completedForDate === kyivDate(); }
@@ -3696,16 +3707,22 @@
 
   function kyivClock(){
     return new Intl.DateTimeFormat('en', { timeZone:'Europe/Kyiv', hour:'2-digit', minute:'2-digit', second:'2-digit', hourCycle:'h23' })
-      .formatToParts(new Date()).reduce((out, p)=>{ out[p.type]=p.value; return out; }, {});
+      .formatToParts(appNow()).reduce((out, p)=>{ out[p.type]=p.value; return out; }, {});
+  }
+  function dailyDueSeconds(task){
+    const [hours, minutes] = String(task.reminderTime || '10:00').split(':').map(Number);
+    return Number.isInteger(hours) && Number.isInteger(minutes) ? hours * 3600 + minutes * 60 : null;
+  }
+  function currentKyivSeconds(){
+    const now = kyivClock();
+    return Number(now.hour) * 3600 + Number(now.minute) * 60 + Number(now.second);
   }
   function reminderCountdown(task){
     if(!task.dailyReminder) return '';
     if(task.remindersEnabled === false) return 'Напоминания выключены';
-    const [hours, minutes] = String(task.reminderTime || '10:00').split(':').map(Number);
-    if(!Number.isInteger(hours) || !Number.isInteger(minutes)) return '';
-    const now = kyivClock();
-    const current = Number(now.hour) * 3600 + Number(now.minute) * 60 + Number(now.second);
-    const due = hours * 3600 + minutes * 60;
+    const due = dailyDueSeconds(task);
+    if(due == null) return '';
+    const current = currentKyivSeconds();
     let seconds;
     if(taskIsDailyDone(task)) seconds = due + 86400 - current;
     else if(current < due) seconds = due - current;
@@ -3848,7 +3865,14 @@
     if(!item) return;
     item.column = 'done';
     item.completedAt = kyivDate();
-    if(item.dailyReminder) item.completedForDate = kyivDate();
+    if(item.dailyReminder){
+      // Between midnight and today's scheduled time, the completion belongs to
+      // yesterday's occurrence. Today's reminder must remain scheduled.
+      const due = dailyDueSeconds(item);
+      item.completedForDate = due != null && currentKyivSeconds() < due
+        ? kyivDateFor(new Date(appNow().getTime() - 24 * 60 * 60 * 1000))
+        : kyivDate();
+    }
     saveState(true);
     render();
   }
@@ -3936,7 +3960,9 @@
   document.getElementById('addTaskBtn').addEventListener('click', safe(()=>openTaskEditor(null)));
   document.getElementById('taskSearchInput').addEventListener('input', ()=>{ if(currentView==='tasks') renderTasksView(); });
   document.getElementById('taskViewFilter').addEventListener('change', ()=>{ if(currentView==='tasks') renderTasksView(); });
+  syncServerClock().catch(()=>{});
   setInterval(refreshReminderCountdowns, 1000);
+  setInterval(()=>syncServerClock().catch(()=>{}), 60 * 1000);
 
   function renderTable(){
     populateFilterOptions();

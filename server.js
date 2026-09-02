@@ -117,6 +117,12 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+// The client uses this for countdowns, so a laptop with an incorrect clock cannot
+// make a Kiev-time task look overdue or postpone its visible reminder.
+app.get('/api/time', (req, res) => {
+  res.json({ now: new Date().toISOString(), kyiv: kyivNow() });
+});
+
 const ACTIVITY_LOG_LIMIT = 300;
 async function logActivity(action){
   try{
