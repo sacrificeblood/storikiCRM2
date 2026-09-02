@@ -65,7 +65,10 @@ async function deliverDueTaskReminders(){
     const dueAt = hours * 60 + minutes;
     // Due time plus every five minutes afterwards. The notification log makes this
     // safe even if the process runs the check more than once in a minute.
-    if(minuteOfDay < dueAt || (minuteOfDay - dueAt) % 5 !== 0) continue;
+    // Do not require the process to wake up on an exact five-minute boundary.
+    // Railway can restart or briefly pause a container; the next check should
+    // still deliver the currently due reminder instead of silently skipping it.
+    if(minuteOfDay < dueAt) continue;
     const interval = Math.floor((minuteOfDay - dueAt) / 5);
     await sendTaskTelegramOnce(
       row.id,

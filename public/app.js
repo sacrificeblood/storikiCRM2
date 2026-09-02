@@ -3730,21 +3730,20 @@
   function renderDailyTasks(tasks, matches){
     const wrap = document.getElementById('dailyTasksWrap');
     const dailyTasks = tasks.filter(t=>t.dailyReminder).filter(matches);
-    if(!dailyTasks.length){ wrap.innerHTML=''; return; }
-    const rows = dailyTasks.map(t=>{
+    const cards = dailyTasks.map(t=>{
       const done = taskIsDailyDone(t);
-      return `<tr data-task-id="${t.id}">
-        <td><strong>${escapeHtml(t.title)}</strong>${t.description ? `<div class="muted" style="font-size:11.5px; margin-top:3px; white-space:pre-wrap;">${escapeHtml(t.description)}</div>` : ''}</td>
-        <td><span class="task-reminder-badge">${escapeHtml(t.reminderTime||'10:00')} Киев</span></td>
-        <td><span class="task-countdown" data-reminder-countdown="${t.id}">${escapeHtml(reminderCountdown(t))}</span></td>
-        <td><div class="daily-task-actions">
+      return `<div class="daily-task-card" data-task-id="${t.id}">
+        <div class="daily-task-card-title">${escapeHtml(t.title)}</div>
+        ${t.description ? `<div class="daily-task-card-desc">${escapeHtml(t.description)}</div>` : ''}
+        <div class="task-meta"><span class="task-reminder-badge">⏰ ${escapeHtml(t.reminderTime||'10:00')} Киев</span><span class="task-countdown" data-reminder-countdown="${t.id}">${escapeHtml(reminderCountdown(t))}</span></div>
+        <div class="daily-task-actions" style="margin-top:8px;">
           <button type="button" class="task-complete-btn daily-complete-btn" data-task-id="${t.id}" ${done?'disabled':''}>${done?'✓ Выполнено':'✓ Выполнить'}</button>
           <button type="button" class="task-reminder-toggle ${t.remindersEnabled === false ? '' : 'on'} daily-reminder-toggle" data-task-id="${t.id}">${t.remindersEnabled === false ? '🔕 Выкл.' : '🔔 Вкл.'}</button>
           ${done ? '<span class="daily-task-done">Готово сегодня</span>' : ''}
-        </div></td>
-      </tr>`;
+        </div>
+      </div>`;
     }).join('');
-    wrap.innerHTML = `<section class="daily-tasks-panel"><div class="daily-tasks-title">⏰ Ежедневные задачи</div><table><thead><tr><th>Задача</th><th>Время</th><th>Таймер</th><th>Действия</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+    wrap.innerHTML = `<section class="daily-tasks-panel"><div class="daily-tasks-title"><span>⏰ Ежедневные задачи</span><button type="button" class="btn btn-ghost daily-add-btn" style="padding:5px 8px;">+ Добавить</button></div><div class="daily-tasks-list">${cards || '<div class="tasks-empty">Нет ежедневных задач</div>'}</div></section>`;
   }
 
   function openTaskEditor(id, dailyPreset){
@@ -3928,12 +3927,13 @@
       if(completeBtn && !completeBtn.disabled){ completeTask(completeBtn.dataset.taskId); return; }
       const reminderBtn = e.target.closest('.daily-reminder-toggle');
       if(reminderBtn){ toggleTaskReminders(reminderBtn.dataset.taskId); return; }
-      const row = e.target.closest('tr[data-task-id]');
-      if(row){ openTaskEditor(row.dataset.taskId); }
+      const addBtn = e.target.closest('.daily-add-btn');
+      if(addBtn){ openTaskEditor(null, true); return; }
+      const card = e.target.closest('.daily-task-card');
+      if(card){ openTaskEditor(card.dataset.taskId); }
     }));
   }
   document.getElementById('addTaskBtn').addEventListener('click', safe(()=>openTaskEditor(null)));
-  document.getElementById('addDailyTaskBtn').addEventListener('click', safe(()=>openTaskEditor(null, true)));
   document.getElementById('taskSearchInput').addEventListener('input', ()=>{ if(currentView==='tasks') renderTasksView(); });
   document.getElementById('taskViewFilter').addEventListener('change', ()=>{ if(currentView==='tasks') renderTasksView(); });
   setInterval(refreshReminderCountdowns, 1000);

@@ -454,10 +454,18 @@
   .task-countdown{color:var(--text-dim); font-variant-numeric:tabular-nums;}
   .tasks-archive{margin-top:18px; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px;}
   .tasks-archive summary{cursor:pointer; color:var(--text-dim); font-size:12px; font-weight:700;}
-  .daily-tasks-panel{margin-bottom:18px; background:var(--panel); border:1px solid var(--border); border-radius:10px; overflow:hidden;}
-  .daily-tasks-title{padding:13px 15px; color:var(--amber); font-size:13px; font-weight:700; border-bottom:1px solid var(--border);}
+  .tasks-workspace{display:flex; gap:16px; align-items:flex-start;}
+  .daily-tasks-panel{width:300px; flex:0 0 300px; background:var(--panel); border:1px solid var(--border); border-radius:10px; overflow:hidden;}
+  .daily-tasks-title{padding:13px 12px; color:var(--amber); font-size:13px; font-weight:700; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:8px;}
+  .daily-tasks-list{padding:10px; display:flex; flex-direction:column; gap:8px;}
+  .daily-task-card{background:var(--panel-2); border:1px solid var(--border-soft); border-left:3px solid var(--amber); border-radius:7px; padding:10px; cursor:pointer;}
+  .daily-task-card:hover{border-color:var(--amber);}
+  .daily-task-card-title{font-size:13px; font-weight:700; word-break:break-word;}
+  .daily-task-card-desc{font-size:11.5px; color:var(--text-dim); margin-top:4px; white-space:pre-wrap; word-break:break-word;}
   .daily-task-actions{display:flex; gap:6px; align-items:center; flex-wrap:wrap;}
   .daily-task-done{color:var(--green); font-weight:700;}
+  #tasksBoardWrap{min-width:0; flex:1;}
+  @media(max-width:850px){.tasks-workspace{flex-direction:column;}.daily-tasks-panel{width:100%; flex-basis:auto;}.tasks-board{width:100%;}}
   .task-card .task-move-row{display:flex; gap:4px; margin-top:8px;}
   .task-move-btn{
     flex:1; border:1px solid var(--border); background:var(--panel); color:var(--text-dim); border-radius:5px;
@@ -745,7 +753,6 @@
     <div id="tasksView" style="display:none;">
       <div class="filters-card">
         <button class="btn btn-fan" id="addTaskBtn" style="align-self:end;">+ Добавить задачу</button>
-        <button class="btn btn-ghost" id="addDailyTaskBtn" style="align-self:end;">⏰ Ежедневная задача</button>
         <div class="filter-field" style="flex:1; min-width:200px;">
           <label for="taskSearchInput">Поиск по задачам</label>
           <input id="taskSearchInput" type="search" placeholder="Название или описание">
@@ -755,8 +762,10 @@
           <select id="taskViewFilter"><option value="active">Активные</option><option value="all">Все, включая архив</option><option value="archive">Только архив</option></select>
         </div>
       </div>
-      <div id="dailyTasksWrap"></div>
-      <div id="tasksBoardWrap"></div>
+      <div class="tasks-workspace">
+        <div id="dailyTasksWrap"></div>
+        <div id="tasksBoardWrap"></div>
+      </div>
     </div>
   </main>
 </div>
