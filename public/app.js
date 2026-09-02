@@ -293,7 +293,12 @@
     const plans=(state.launchPlans||[]).filter(plan=>plan.date===launchPlanDate);
     const wrap=document.getElementById('launchPlanTableWrap');
     if(!plans.length){wrap.innerHTML='<div class="launch-plan-empty">На этот день пока нет плана залива.<br>Добавь первую кампанию — она останется в истории даты.</div>';return;}
-    wrap.innerHTML=`<table class="launch-plan-table"><thead><tr><th>Креатив</th><th>GEO</th><th>Кол-во</th><th>Сетап кампании</th><th>Бюджет</th><th></th></tr></thead><tbody>${plans.map(plan=>`<tr data-launch-plan-id="${plan.id}"><td><strong>${escapeHtml(plan.creativeName)}</strong></td><td>${escapeHtml(plan.geo||'—')}</td><td>${escapeHtml(plan.quantity||'—')}</td><td>${escapeHtml(plan.campaignSetup||'—')}</td><td>${escapeHtml(plan.budget||'—')}</td><td class="row-actions"><button class="btn-plain edit-launch-plan" type="button">Изм.</button></td></tr>`).join('')}</tbody></table>`;
+    const groups=new Map();
+    plans.forEach(plan=>{const geo=(plan.geo||'Без GEO').trim()||'Без GEO';const list=groups.get(geo)||[];list.push(plan);groups.set(geo,list);});
+    wrap.innerHTML=[...groups.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([geo,items])=>{
+      const quantity=items.reduce((sum,plan)=>sum+(Number(plan.quantity)||0),0);
+      return `<details class="launch-geo-group" open><summary class="launch-geo-summary"><span class="launch-geo-label">GEO</span><strong class="launch-geo-name">${escapeHtml(geo)}</strong><span class="launch-geo-count">${items.length} камп. · ${quantity} шт.</span></summary><table class="launch-plan-table"><thead><tr><th>Креатив</th><th>Кол-во</th><th>Сетап кампании</th><th>Бюджет</th><th></th></tr></thead><tbody>${items.map(plan=>`<tr data-launch-plan-id="${plan.id}"><td><span class="launch-creative-name">${escapeHtml(plan.creativeName)}</span></td><td>${escapeHtml(plan.quantity||'—')}</td><td>${escapeHtml(plan.campaignSetup||'—')}</td><td>${escapeHtml(plan.budget||'—')}</td><td class="row-actions"><button class="btn-plain edit-launch-plan" type="button">Изм.</button></td></tr>`).join('')}</tbody></table></details>`;
+    }).join('');
     wrap.querySelectorAll('.edit-launch-plan').forEach(button=>button.addEventListener('click',()=>openLaunchPlanEditor(button.closest('tr').dataset.launchPlanId)));
   }
   function openLaunchPlanEditor(id){

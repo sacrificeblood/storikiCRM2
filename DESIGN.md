@@ -90,7 +90,7 @@ Active navigation is a red cut line. Tables use compact rows and warm hairlines;
 
 ### Daily launch plan
 
-The launch plan lives as a peer tab to Tasks, using a date strip and an intentionally compact row table. Its fields are operational rather than decorative: creative naming, GEO, quantity, campaign setup, and budget are immediately scanable for one selected day.
+The launch plan lives as a peer tab to Tasks, using a date strip and Campaign-like expandable GEO groups. GEO is the amber section signal, while creative naming is rose-red; quantity, setup, and budget remain quiet supporting data for rapid daily scanning.
 
 ### Notes board
 

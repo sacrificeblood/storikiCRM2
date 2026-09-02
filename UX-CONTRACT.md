@@ -9,5 +9,5 @@
 - Toasts use the single `showToast` system. Server failures use the existing error banner with recovery detail.
 - Tables remain semantic HTML tables; their page owns horizontal overflow on narrow screens.
 - Scrollbars inherit the global dark baseline in `public/index.html`.
-- «План залива» is a Tasks sub-tab. Each launch-plan row is independent and belongs to one selected calendar day; it records creative naming, GEO, quantity, campaign setup, and budget. Date arrows preserve the plan history, while Today returns to the current day.
+- «План залива» is a Tasks sub-tab. Each launch-plan row is independent and belongs to one selected calendar day; it records creative naming, GEO, quantity, campaign setup, and budget. Rows are grouped into expandable GEO sections like Campaign, with a per-GEO campaign and quantity summary. Date arrows preserve the plan history, while Today returns to the current day.
 - Notes are stored as independent `note` and `noteLink` entities. A note saves its title, body, and board position; dragging the point onto another note creates one undirected relationship. Connection endpoints automatically use the closest card edges, and a connection can be removed with a double-click or keyboard Enter/Delete while focused. Editing and deletion use the note modal.
