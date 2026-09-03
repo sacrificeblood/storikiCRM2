@@ -700,8 +700,7 @@
     main{overflow:visible;min-height:0;}
     #table-view,#fanpage-view,#dashboardView,#tasksView,#report-view{padding:14px 12px 26px!important;}
     .filters-card{padding:12px!important;gap:10px!important;}.filter-field{width:100%;min-width:0!important;}.filter-field input,.filter-field select{width:100%;min-width:0!important;}
-    .filters-card>.btn,.filters-card>.acc-hidden-toggle{width:100%;align-self:stretch!important;}
-    .acc-hidden-toggle{padding:8px 0;color:var(--text-dim);font-size:12px;}
+    .filters-card>.btn{width:100%;align-self:stretch!important;}
     .report-month-bar,.launch-plan-toolbar{flex-wrap:wrap;justify-content:center;}.launch-plan-toolbar>.btn{width:100%;}
     .section-tabs{width:100%;overflow-x:auto;}.section-tab{flex:1;white-space:nowrap;}
     #reportTableWrap,#fanpageTableWrap,#accsTreeWrap,#creoTreeWrap,#campaignTreeWrap,#geoCipherTableWrap,#launchPlanTableWrap{overflow-x:auto;}
@@ -866,7 +865,6 @@
               <option value="payment_error">Payment error</option>
             </select>
           </div>
-          <label class="acc-hidden-toggle"><input type="checkbox" id="showHiddenAccs"> Показать скрытые забаненные</label>
           <button class="btn btn-fan" id="addAccBtn" style="align-self:end;">+ Добавить агента</button>
           <button class="btn btn-ghost" id="clearAccFiltersBtn" style="align-self:end;">Сбросить фильтры</button>
           <div class="result-count" id="accResultCount"></div>

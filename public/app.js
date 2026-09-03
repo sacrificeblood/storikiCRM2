@@ -2103,14 +2103,12 @@
   };
   const ACCS_UI_STATE_KEY = 'minon-devils-accs-ui-v1';
   function loadAccsUiState(){
-    try{ const saved=JSON.parse(localStorage.getItem(ACCS_UI_STATE_KEY)||'{}'); return { collapsed:new Set(Array.isArray(saved.collapsed)?saved.collapsed:[]), showHidden:!!saved.showHidden }; }
-    catch(e){ return { collapsed:new Set(), showHidden:false }; }
+    try{ const saved=JSON.parse(localStorage.getItem(ACCS_UI_STATE_KEY)||'{}'); return new Set(Array.isArray(saved.collapsed)?saved.collapsed:[]); }
+    catch(e){ return new Set(); }
   }
-  const accsUiState=loadAccsUiState();
-  let collapsedAccGroups = accsUiState.collapsed;
-  document.getElementById('showHiddenAccs').checked = accsUiState.showHidden;
+  let collapsedAccGroups = loadAccsUiState();
   function saveAccsUiState(){
-    try{ localStorage.setItem(ACCS_UI_STATE_KEY,JSON.stringify({collapsed:[...collapsedAccGroups],showHidden:document.getElementById('showHiddenAccs')?.checked||false})); }catch(e){}
+    try{ localStorage.setItem(ACCS_UI_STATE_KEY,JSON.stringify({collapsed:[...collapsedAccGroups]})); }catch(e){}
   }
   function todayStr(){
     const d = new Date();
@@ -2497,7 +2495,6 @@
     const agentFilter = document.getElementById('accAgentFilter').value;
     const socFilter = document.getElementById('accSocFilter').value;
     const statusFilter = document.getElementById('accStatusFilter').value;
-    const showHidden = document.getElementById('showHiddenAccs').checked;
 
     const socById = {}; acc.socs.forEach(s=>socById[s.id]=s);
 
@@ -2514,7 +2511,7 @@
       // pre-filter accounts per soc to know whether this agent/soc should show at all
       const socBlocks = [];
       socsOfAgent.sort((a,b)=>a.name.localeCompare(b.name)).forEach(soc => {
-        let accountsOfSoc = acc.accounts.filter(a=>a.socId===soc.id && (showHidden || !a.hidden));
+        let accountsOfSoc = acc.accounts.filter(a=>a.socId===soc.id && !a.hidden);
         if(statusFilter) accountsOfSoc = accountsOfSoc.filter(a=>a.status===statusFilter);
         if(search){
           const socMatches = soc.name.toLowerCase().includes(search) || (soc.adsPowerId||'').toLowerCase().includes(search) || (soc.pixel||'').toLowerCase().includes(search);
@@ -2642,13 +2639,12 @@
   }
 
   document.getElementById('addAccBtn').addEventListener('click', safe(()=>openAgentEditor(null)));
-  ['accSearch','accAgentFilter','accSocFilter','accStatusFilter','showHiddenAccs'].forEach(id=>{
+  ['accSearch','accAgentFilter','accSocFilter','accStatusFilter'].forEach(id=>{
     document.getElementById(id).addEventListener('input', renderAccsView);
     document.getElementById(id).addEventListener('change', ()=>{saveAccsUiState();renderAccsView();});
   });
   document.getElementById('clearAccFiltersBtn').addEventListener('click', ()=>{
     ['accSearch','accAgentFilter','accSocFilter','accStatusFilter'].forEach(id=>document.getElementById(id).value='');
-    document.getElementById('showHiddenAccs').checked=false;
     saveAccsUiState();
     renderAccsView();
   });
