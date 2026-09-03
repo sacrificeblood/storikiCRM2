@@ -218,6 +218,25 @@ app.get('/api/time', (req, res) => {
 // Everything below this line is private workspace data.
 app.use('/api', requireAuth);
 
+app.get('/api/canvases', async (req,res)=>{
+  const sql=req.user.role==='admin'
+    ? `SELECT c.*,u.display_name AS owner_name FROM crm_canvases c JOIN users u ON u.id=c.owner_id ORDER BY c.created_at`
+    : `SELECT c.*,u.display_name AS owner_name FROM crm_canvases c JOIN users u ON u.id=c.owner_id WHERE c.owner_id=$1 OR EXISTS(SELECT 1 FROM canvas_access a WHERE a.canvas_id=c.id AND a.user_id=$1) ORDER BY c.created_at`;
+  const result=await pool.query(sql,req.user.role==='admin'?[]:[req.user.id]); res.json({canvases:result.rows});
+});
+app.post('/api/canvases', async (req,res)=>{
+  if(!['buyer','admin'].includes(req.user.role)) return res.status(403).json({error:'Недостаточно прав'});
+  const name=String(req.body?.name||'').trim(); if(!name) return res.status(400).json({error:'Введите название полотна'});
+  const ownerId=req.user.role==='admin'?String(req.body?.ownerId||''):req.user.id;
+  if(req.user.role==='admin' && !(await pool.query(`SELECT id FROM users WHERE id=$1 AND role='buyer'`,[ownerId])).rows.length) return res.status(400).json({error:'Выберите баера'});
+  const id=uid(); await pool.query('INSERT INTO crm_canvases (id,owner_id,name) VALUES ($1,$2,$3)',[id,ownerId,name]); res.status(201).json({id,name});
+});
+app.post('/api/canvases/:id/share', async (req,res)=>{
+  const found=await pool.query('SELECT owner_id FROM crm_canvases WHERE id=$1',[req.params.id]); if(!found.rows.length) return res.status(404).json({error:'Полотно не найдено'});
+  if(req.user.role!=='admin' && found.rows[0].owner_id!==req.user.id) return res.status(403).json({error:'Недостаточно прав'});
+  const assistantId=String(req.body?.assistantId||''); await pool.query('INSERT INTO canvas_access (canvas_id,user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',[req.params.id,assistantId]); res.json({ok:true});
+});
+
 app.get('/api/users', requireRole('admin'), async (req,res)=>{
   try{
     const result=req.user.role==='admin'
