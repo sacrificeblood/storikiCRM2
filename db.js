@@ -55,8 +55,12 @@ async function initSchema(){
     );
   `);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS graph_x INTEGER;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS graph_y INTEGER;`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_workspace ON users (workspace_id);`);
   await pool.query(`CREATE TABLE IF NOT EXISTS crm_canvases (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now());`);
+  await pool.query(`ALTER TABLE crm_canvases ADD COLUMN IF NOT EXISTS graph_x INTEGER;`);
+  await pool.query(`ALTER TABLE crm_canvases ADD COLUMN IF NOT EXISTS graph_y INTEGER;`);
   await pool.query(`CREATE TABLE IF NOT EXISTS canvas_access (canvas_id TEXT NOT NULL REFERENCES crm_canvases(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(canvas_id,user_id));`);
   await pool.query(`INSERT INTO crm_canvases (id,owner_id,name) SELECT id,id,'Основная CRM' FROM users WHERE role='buyer' ON CONFLICT DO NOTHING;`);
   await pool.query(`INSERT INTO canvas_access (canvas_id,user_id) SELECT workspace_id,id FROM users WHERE role='assistant' AND workspace_id IS NOT NULL ON CONFLICT DO NOTHING;`);

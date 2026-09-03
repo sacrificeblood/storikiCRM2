@@ -95,20 +95,24 @@
       if(!res.ok) return location.replace('/login');
       const {user}=await res.json();
       window.currentUser=user;
-      window.activeWorkspace=localStorage.getItem('minon-active-canvas')||'main';
       const canvases=await (await fetch('/api/canvases',{credentials:'include'})).json();
-      if(user.role==='admin' || user.role==='buyer' || user.role==='assistant'){
+      const available=canvases.canvases||[];
+      const stored=localStorage.getItem('minon-active-canvas');
+      window.activeWorkspace=stored&&available.some(x=>x.id===stored)?stored:(user.role==='admin'?'main':(available[0]?.id||user.workspaceId));
+      if(user.role==='admin' || available.length>1){
         const select=document.getElementById('workspaceSwitcher'); select.style.display='inline-block';
-        select.innerHTML=(user.role==='admin'?'<option value="main">Моя CRM</option>':'')+canvases.canvases.map(x=>`<option value="${x.id}">${x.owner_name}: ${x.name}</option>`).join('');
+        select.innerHTML=available.map(x=>`<option value="${x.id}">${x.owner_name}: ${x.name}</option>`).join('');
         select.value=window.activeWorkspace;
         select.addEventListener('change',()=>{localStorage.setItem('minon-active-canvas',select.value);location.reload();});
       }
       document.body.dataset.role=user.role;
       if(user.role==='admin') document.getElementById('peopleBtn').style.display='inline-flex';
+      if(user.role==='buyer') document.getElementById('canvasMapBtn').style.display='inline-flex';
       if(user.role==='buyer') document.getElementById('activityBtn').style.display='inline-flex';
       if(user.role!=='admin'){ document.getElementById('trashBtn').style.display='none'; document.getElementById('backupsBtn').style.display='none'; document.getElementById('peopleBtn').style.display='none'; }
       if(user.role!=='admin') document.getElementById('addTaskBtn').style.display='none';
       document.getElementById('peopleBtn').addEventListener('click',()=>location.href='/people.html');
+      document.getElementById('canvasMapBtn').addEventListener('click',()=>location.href='/people.html');
       document.getElementById('activityBtn').addEventListener('click',()=>location.href='/activity.html');
       document.getElementById('logoutBtn').addEventListener('click',async()=>{
         await fetch('/api/auth/logout',{method:'POST',credentials:'include'}); location.replace('/login');

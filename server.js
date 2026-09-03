@@ -143,14 +143,14 @@ const FEATURE_TYPES={
   reports:['spendRevDay','launchPlan'], accs:['accagent','accsoc','acc'], creatives:['creogeo','creocreative'], campaigns:['campgeo','campcampaign','geocipher']
 };
 function featureForType(type){ return Object.keys(FEATURE_TYPES).find(key=>FEATURE_TYPES[key].includes(type)); }
-function publicUser(row){ return { id:row.id, email:row.email, name:row.display_name, role:row.role, workspaceId:row.workspace_id, permissions:row.permissions||{} }; }
+function publicUser(row){ return { id:row.id, email:row.email, name:row.display_name, role:row.role, workspaceId:row.workspace_id, permissions:row.permissions||{}, graphX:row.graph_x, graphY:row.graph_y }; }
 function hasEditAccess(user,type){ return user.role!=='assistant' || !!user.permissions?.[featureForType(type)]; }
 async function requireAuth(req,res,next){
   try{
     const token=readCookie(req,SESSION_COOKIE);
     if(!token) return unauthenticated(req,res,'Требуется вход');
     const result=await pool.query(
-      `SELECT u.id,u.email,u.display_name,u.role,u.workspace_id,u.permissions FROM user_sessions s
+      `SELECT u.id,u.email,u.display_name,u.role,u.workspace_id,u.permissions,u.graph_x,u.graph_y FROM user_sessions s
        JOIN users u ON u.id=s.user_id
        WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active=true`, [hashToken(token)]
     );
@@ -178,6 +178,8 @@ async function seedAdmin(){
     await pool.query('INSERT INTO users (id,email,display_name,role,password_hash) VALUES ($1,$2,$3,$4,$5)',[uid(),email,'Администратор','admin',hashPassword(password)]);
     console.log('Initial admin account created');
   }
+  const admin=await pool.query(`SELECT id FROM users WHERE email=$1 AND role='admin'`,[email]);
+  if(admin.rows.length) await pool.query(`INSERT INTO crm_canvases (id,owner_id,name) VALUES ('main',$1,'CRM админа') ON CONFLICT (id) DO NOTHING`,[admin.rows[0].id]);
 }
 
 app.post('/api/auth/login', async (req,res)=>{
@@ -237,6 +239,19 @@ app.get('/api/canvases', async (req,res)=>{
     : `SELECT c.*,u.display_name AS owner_name FROM crm_canvases c JOIN users u ON u.id=c.owner_id WHERE c.owner_id=$1 OR EXISTS(SELECT 1 FROM canvas_access a WHERE a.canvas_id=c.id AND a.user_id=$1) ORDER BY c.created_at`;
   const result=await pool.query(sql,req.user.role==='admin'?[]:[req.user.id]); res.json({canvases:result.rows});
 });
+app.get('/api/canvas-graph', requireRole('admin','buyer'), async (req,res)=>{
+  const isAdmin=req.user.role==='admin';
+  const [users,canvases,access]=await Promise.all(isAdmin ? [
+    pool.query(`SELECT id,email,display_name,role,workspace_id,permissions,active,graph_x,graph_y FROM users ORDER BY created_at`),
+    pool.query(`SELECT c.*,u.display_name AS owner_name FROM crm_canvases c JOIN users u ON u.id=c.owner_id ORDER BY c.created_at`),
+    pool.query(`SELECT canvas_id,user_id FROM canvas_access`)
+  ] : [
+    pool.query(`SELECT id,email,display_name,role,workspace_id,permissions,active,graph_x,graph_y FROM users WHERE id=$1 OR (role='assistant' AND workspace_id=$1) ORDER BY created_at`,[req.user.id]),
+    pool.query(`SELECT c.*,u.display_name AS owner_name FROM crm_canvases c JOIN users u ON u.id=c.owner_id WHERE c.owner_id=$1 ORDER BY c.created_at`,[req.user.id]),
+    pool.query(`SELECT a.canvas_id,a.user_id FROM canvas_access a JOIN crm_canvases c ON c.id=a.canvas_id WHERE c.owner_id=$1`,[req.user.id])
+  ]);
+  res.json({users:users.rows.map(publicUser).map((u,i)=>({...u,active:users.rows[i].active})),canvases:canvases.rows,access:access.rows});
+});
 app.post('/api/canvases', async (req,res)=>{
   if(!['buyer','admin'].includes(req.user.role)) return res.status(403).json({error:'Недостаточно прав'});
   const name=String(req.body?.name||'').trim(); if(!name) return res.status(400).json({error:'Введите название полотна'});
@@ -247,14 +262,38 @@ app.post('/api/canvases', async (req,res)=>{
 app.post('/api/canvases/:id/share', async (req,res)=>{
   const found=await pool.query('SELECT owner_id FROM crm_canvases WHERE id=$1',[req.params.id]); if(!found.rows.length) return res.status(404).json({error:'Полотно не найдено'});
   if(req.user.role!=='admin' && found.rows[0].owner_id!==req.user.id) return res.status(403).json({error:'Недостаточно прав'});
-  const assistantId=String(req.body?.assistantId||''); await pool.query('INSERT INTO canvas_access (canvas_id,user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',[req.params.id,assistantId]); res.json({ok:true});
+  const assistantId=String(req.body?.assistantId||'');
+  const assistant=await pool.query(`SELECT id,workspace_id FROM users WHERE id=$1 AND role='assistant'`,[assistantId]);
+  if(!assistant.rows.length) return res.status(400).json({error:'Связать можно только ассистента'});
+  if(req.user.role==='buyer' && assistant.rows[0].workspace_id!==req.user.id) return res.status(403).json({error:'Этот ассистент не относится к вашему аккаунту'});
+  await pool.query('INSERT INTO canvas_access (canvas_id,user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',[req.params.id,assistantId]); res.json({ok:true});
+});
+app.delete('/api/canvases/:id/share/:userId', async (req,res)=>{
+  const found=await pool.query('SELECT owner_id FROM crm_canvases WHERE id=$1',[req.params.id]);
+  if(!found.rows.length) return res.status(404).json({error:'Полотно не найдено'});
+  if(req.user.role!=='admin' && found.rows[0].owner_id!==req.user.id) return res.status(403).json({error:'Недостаточно прав'});
+  await pool.query('DELETE FROM canvas_access WHERE canvas_id=$1 AND user_id=$2',[req.params.id,req.params.userId]); res.json({ok:true});
+});
+app.patch('/api/canvases/:id', async (req,res)=>{
+  const found=await pool.query('SELECT owner_id FROM crm_canvases WHERE id=$1',[req.params.id]);
+  if(!found.rows.length) return res.status(404).json({error:'Полотно не найдено'});
+  if(req.user.role!=='admin' && found.rows[0].owner_id!==req.user.id) return res.status(403).json({error:'Недостаточно прав'});
+  await pool.query('UPDATE crm_canvases SET name=COALESCE($2,name),graph_x=COALESCE($3,graph_x),graph_y=COALESCE($4,graph_y) WHERE id=$1',[req.params.id,req.body?.name||null,Number.isFinite(req.body?.x)?Math.round(req.body.x):null,Number.isFinite(req.body?.y)?Math.round(req.body.y):null]); res.json({ok:true});
+});
+app.delete('/api/canvases/:id', async (req,res)=>{
+  const found=await pool.query('SELECT owner_id FROM crm_canvases WHERE id=$1',[req.params.id]);
+  if(!found.rows.length) return res.status(404).json({error:'Полотно не найдено'});
+  if(req.user.role!=='admin' && found.rows[0].owner_id!==req.user.id) return res.status(403).json({error:'Недостаточно прав'});
+  if((await pool.query('SELECT count(*)::int AS n FROM crm_canvases WHERE owner_id=$1',[found.rows[0].owner_id])).rows[0].n<=1) return res.status(400).json({error:'Нельзя удалить единственное полотно баера'});
+  if((await pool.query('SELECT 1 FROM entities WHERE workspace_id=$1 LIMIT 1',[req.params.id])).rows.length) return res.status(409).json({error:'Сначала очистите данные этого CRM-полотна'});
+  await pool.query('DELETE FROM crm_canvases WHERE id=$1',[req.params.id]); res.json({ok:true});
 });
 
 app.get('/api/users', requireRole('admin'), async (req,res)=>{
   try{
     const result=req.user.role==='admin'
-      ? await pool.query('SELECT id,email,display_name,role,workspace_id,permissions,active,created_at FROM users ORDER BY created_at')
-      : await pool.query(`SELECT id,email,display_name,role,workspace_id,permissions,active,created_at FROM users WHERE workspace_id=$1 ORDER BY created_at`,[req.user.workspaceId]);
+      ? await pool.query('SELECT id,email,display_name,role,workspace_id,permissions,active,graph_x,graph_y,created_at FROM users ORDER BY created_at')
+      : await pool.query(`SELECT id,email,display_name,role,workspace_id,permissions,active,graph_x,graph_y,created_at FROM users WHERE workspace_id=$1 ORDER BY created_at`,[req.user.workspaceId]);
     res.json({users:result.rows.map(publicUser).map((user,index)=>({...user,active:result.rows[index].active}))});
   }catch(e){ res.status(500).json({error:'Не удалось загрузить пользователей'}); }
 });
@@ -278,6 +317,7 @@ app.post('/api/users', requireRole('admin'), async (req,res)=>{
       'INSERT INTO users (id,email,display_name,role,workspace_id,permissions,password_hash) VALUES ($1,$2,$3,$4,$5,$6,$7)',
       [id,email,displayName,requestedRole,workspaceId,JSON.stringify(permissions),hashPassword(password)]
     );
+    if(requestedRole==='buyer') await pool.query(`INSERT INTO crm_canvases (id,owner_id,name) VALUES ($1,$1,'Основная CRM') ON CONFLICT DO NOTHING`,[id]);
     res.status(201).json({user:{id,email,name:displayName,role:requestedRole,workspaceId}});
   }catch(e){
     if(e.code==='23505') return res.status(409).json({error:'Этот email уже используется'});
@@ -285,11 +325,16 @@ app.post('/api/users', requireRole('admin'), async (req,res)=>{
   }
 });
 
-app.patch('/api/users/:id', requireRole('admin'), async (req,res)=>{
+app.patch('/api/users/:id', requireRole('admin','buyer'), async (req,res)=>{
   try{
     const target=await pool.query('SELECT id,role,workspace_id FROM users WHERE id=$1',[req.params.id]);
     if(!target.rows.length) return res.status(404).json({error:'Пользователь не найден'});
     const row=target.rows[0];
+    if(req.user.role==='buyer'){
+      const isOwnGraphNode=row.id===req.user.id || (row.role==='assistant' && row.workspace_id===req.user.id);
+      const onlyPosition=Object.keys(req.body||{}).every(key=>['x','y'].includes(key));
+      if(!isOwnGraphNode || !onlyPosition) return res.status(403).json({error:'Недостаточно прав'});
+    }
     const permissions=req.body?.permissions && typeof req.body.permissions==='object' ? req.body.permissions : null;
     const workspaceId=req.body?.workspaceId ? String(req.body.workspaceId) : null;
     if(permissions && row.role!=='assistant') return res.status(400).json({error:'Права модулей назначаются только ассистенту'});
@@ -297,7 +342,9 @@ app.patch('/api/users/:id', requireRole('admin'), async (req,res)=>{
       const buyer=await pool.query(`SELECT id FROM users WHERE id=$1 AND role='buyer'`,[workspaceId]);
       if(!buyer.rows.length) return res.status(400).json({error:'Связать можно только с баером'});
     }
-    await pool.query('UPDATE users SET active=$2, permissions=COALESCE($3,permissions), workspace_id=COALESCE($4,workspace_id) WHERE id=$1',[row.id,!!req.body?.active,permissions?JSON.stringify(permissions):null,workspaceId]);
+    const graphX=Number.isFinite(req.body?.x)?Math.round(req.body.x):null, graphY=Number.isFinite(req.body?.y)?Math.round(req.body.y):null;
+    const active=typeof req.body?.active==='boolean'?req.body.active:null;
+    await pool.query('UPDATE users SET active=COALESCE($2,active), permissions=COALESCE($3,permissions), workspace_id=COALESCE($4,workspace_id),graph_x=COALESCE($5,graph_x),graph_y=COALESCE($6,graph_y) WHERE id=$1',[row.id,active,permissions?JSON.stringify(permissions):null,workspaceId,graphX,graphY]);
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:'Не удалось обновить пользователя'}); }
 });
