@@ -64,6 +64,24 @@ async function initSchema(){
   await pool.query(`CREATE TABLE IF NOT EXISTS canvas_access (canvas_id TEXT NOT NULL REFERENCES crm_canvases(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(canvas_id,user_id));`);
   await pool.query(`INSERT INTO crm_canvases (id,owner_id,name) SELECT id,id,'Основная CRM' FROM users WHERE role='buyer' ON CONFLICT DO NOTHING;`);
   await pool.query(`INSERT INTO canvas_access (canvas_id,user_id) SELECT workspace_id,id FROM users WHERE role='assistant' AND workspace_id IS NOT NULL ON CONFLICT DO NOTHING;`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS app_migrations (key TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now());`);
+  // One-time ownership transfer requested by the administrator. The canvas id and
+  // all entities stay unchanged; only its owner changes, so no CRM data is lost.
+  await pool.query(`
+    WITH buyer AS (
+      SELECT users.id FROM users
+      JOIN crm_canvases ON crm_canvases.id='main'
+      WHERE users.role='buyer' AND users.active=true AND lower(users.display_name)=lower('minon')
+      ORDER BY users.created_at LIMIT 1
+    ), claimed AS (
+      INSERT INTO app_migrations (key)
+      SELECT 'transfer-main-canvas-to-minon-v1' FROM buyer
+      ON CONFLICT DO NOTHING RETURNING key
+    )
+    UPDATE crm_canvases SET owner_id=buyer.id
+    FROM buyer, claimed
+    WHERE crm_canvases.id='main'
+  `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS user_sessions (
       token_hash TEXT PRIMARY KEY,

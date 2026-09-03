@@ -281,7 +281,7 @@ app.patch('/api/canvases/:id', async (req,res)=>{
   const ownerId=req.body?.ownerId?String(req.body.ownerId):null;
   if(ownerId){
     if(req.user.role!=='admin') return res.status(403).json({error:'Только админ может сменить владельца полотна'});
-    if(req.params.id==='main') return res.status(400).json({error:'CRM админа нельзя передать баеру'});
+    if(req.params.id==='main') return res.status(400).json({error:'Главное CRM-полотно защищено от повторной передачи'});
     const buyer=await pool.query(`SELECT id FROM users WHERE id=$1 AND role='buyer' AND active=true`,[ownerId]);
     if(!buyer.rows.length) return res.status(400).json({error:'Полотно можно прикрепить только к активному баеру'});
   }
