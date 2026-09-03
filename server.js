@@ -278,7 +278,14 @@ app.patch('/api/canvases/:id', async (req,res)=>{
   const found=await pool.query('SELECT owner_id FROM crm_canvases WHERE id=$1',[req.params.id]);
   if(!found.rows.length) return res.status(404).json({error:'Полотно не найдено'});
   if(req.user.role!=='admin' && found.rows[0].owner_id!==req.user.id) return res.status(403).json({error:'Недостаточно прав'});
-  await pool.query('UPDATE crm_canvases SET name=COALESCE($2,name),graph_x=COALESCE($3,graph_x),graph_y=COALESCE($4,graph_y) WHERE id=$1',[req.params.id,req.body?.name||null,Number.isFinite(req.body?.x)?Math.round(req.body.x):null,Number.isFinite(req.body?.y)?Math.round(req.body.y):null]); res.json({ok:true});
+  const ownerId=req.body?.ownerId?String(req.body.ownerId):null;
+  if(ownerId){
+    if(req.user.role!=='admin') return res.status(403).json({error:'Только админ может сменить владельца полотна'});
+    if(req.params.id==='main') return res.status(400).json({error:'CRM админа нельзя передать баеру'});
+    const buyer=await pool.query(`SELECT id FROM users WHERE id=$1 AND role='buyer' AND active=true`,[ownerId]);
+    if(!buyer.rows.length) return res.status(400).json({error:'Полотно можно прикрепить только к активному баеру'});
+  }
+  await pool.query('UPDATE crm_canvases SET name=COALESCE($2,name),graph_x=COALESCE($3,graph_x),graph_y=COALESCE($4,graph_y),owner_id=COALESCE($5,owner_id) WHERE id=$1',[req.params.id,req.body?.name||null,Number.isFinite(req.body?.x)?Math.round(req.body.x):null,Number.isFinite(req.body?.y)?Math.round(req.body.y):null,ownerId]); res.json({ok:true});
 });
 app.delete('/api/canvases/:id', async (req,res)=>{
   const found=await pool.query('SELECT owner_id FROM crm_canvases WHERE id=$1',[req.params.id]);
