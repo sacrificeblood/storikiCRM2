@@ -83,6 +83,22 @@ async function initSchema(){
     WHERE crm_canvases.id='main'
   `);
   await pool.query(`
+    WITH buyer AS (
+      SELECT users.id FROM users
+      JOIN crm_canvases ON crm_canvases.id='main' AND crm_canvases.owner_id=users.id
+      WHERE users.role='buyer' AND users.active=true AND lower(users.display_name)=lower('minon')
+      LIMIT 1
+    ), claimed AS (
+      INSERT INTO app_migrations (key)
+      SELECT 'share-main-canvas-with-minon-assistants-v1' FROM buyer
+      ON CONFLICT DO NOTHING RETURNING key
+    )
+    INSERT INTO canvas_access (canvas_id,user_id)
+    SELECT 'main', users.id FROM users, buyer, claimed
+    WHERE users.role='assistant' AND users.active=true AND users.workspace_id=buyer.id
+    ON CONFLICT DO NOTHING
+  `);
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS user_sessions (
       token_hash TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
