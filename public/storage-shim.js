@@ -113,6 +113,7 @@
       document.getElementById('logoutBtn').addEventListener('click',async()=>{
         await fetch('/api/auth/logout',{method:'POST',credentials:'include'}); location.replace('/login');
       });
+      document.body.dataset.authReady='true';
       window.__startBoard();
     }catch(e){ location.replace('/login'); }
   }
