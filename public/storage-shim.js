@@ -1,14 +1,15 @@
 (function(){
+  const workspace=()=>window.activeWorkspace&&window.activeWorkspace!=='main'?`?workspace=${encodeURIComponent(window.activeWorkspace)}`:'';
   // ---------- Entities API — one call per entity, never a shared document ----------
   window.entitiesApi = {
     async loadAll(){
-      const res = await fetch('/api/entities', { credentials: 'include' });
+      const res = await fetch('/api/entities'+workspace(), { credentials: 'include' });
       if(!res.ok) throw new Error('Failed to load entities (' + res.status + ')');
       const data = await res.json();
       return data.entities || [];
     },
     async saveEntity(type, id, data){
-      const res = await fetch('/api/entities/' + encodeURIComponent(type) + '/' + encodeURIComponent(id), {
+      const res = await fetch('/api/entities/' + encodeURIComponent(type) + '/' + encodeURIComponent(id)+workspace(), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -19,7 +20,7 @@
       return true;
     },
     async deleteEntity(type, id){
-      const res = await fetch('/api/entities/' + encodeURIComponent(type) + '/' + encodeURIComponent(id), {
+      const res = await fetch('/api/entities/' + encodeURIComponent(type) + '/' + encodeURIComponent(id)+workspace(), {
         method: 'DELETE',
         credentials: 'include',
         keepalive: true
@@ -94,6 +95,14 @@
       if(!res.ok) return location.replace('/login');
       const {user}=await res.json();
       window.currentUser=user;
+      window.activeWorkspace=user.role==='admin'?(localStorage.getItem('minon-admin-workspace')||'main'):user.workspaceId;
+      if(user.role==='admin'){
+        const users=await (await fetch('/api/users',{credentials:'include'})).json();
+        const select=document.getElementById('workspaceSwitcher'); select.style.display='inline-block';
+        select.innerHTML='<option value="main">Моя CRM</option>'+users.users.filter(x=>x.role==='buyer').map(x=>`<option value="${x.id}">CRM: ${x.name}</option>`).join('');
+        select.value=window.activeWorkspace;
+        select.addEventListener('change',()=>{localStorage.setItem('minon-admin-workspace',select.value);location.reload();});
+      }
       document.body.dataset.role=user.role;
       if(user.role==='admin') document.getElementById('peopleBtn').style.display='inline-flex';
       if(user.role==='buyer') document.getElementById('activityBtn').style.display='inline-flex';

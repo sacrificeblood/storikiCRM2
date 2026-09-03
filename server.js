@@ -160,7 +160,7 @@ async function requireAuth(req,res,next){
   }catch(e){ next(e); }
 }
 function requireRole(...roles){ return (req,res,next)=>roles.includes(req.user.role)?next():res.status(403).json({error:'Недостаточно прав'}); }
-function workspaceFor(req){ return req.user.role==='admin' ? 'main' : req.user.workspaceId; }
+function workspaceFor(req){ return req.user.role==='admin' ? String(req.query.workspace||'main') : req.user.workspaceId; }
 function canEditEntity(req, type, existing){
   if(req.user.role==='admin') return true;
   if(req.user.role==='assistant') return hasEditAccess(req.user,type) && (type!=='task' || !!existing);
@@ -290,9 +290,7 @@ async function logActivity(user, action){
 
 app.get('/api/entities', async (req, res) => {
   try{
-    const result = req.user.role==='admin'
-      ? await pool.query('SELECT id, type, data, updated_at FROM entities WHERE workspace_id=$1',['main'])
-      : await pool.query('SELECT id, type, data, updated_at FROM entities WHERE workspace_id=$1',[req.user.workspaceId]);
+    const result = await pool.query('SELECT id, type, data, updated_at FROM entities WHERE workspace_id=$1',[workspaceFor(req)]);
     res.json({ entities: result.rows });
   }catch(e){
     console.error(e);
