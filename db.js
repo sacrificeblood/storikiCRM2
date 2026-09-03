@@ -48,11 +48,13 @@ async function initSchema(){
       display_name TEXT NOT NULL,
       role TEXT NOT NULL CHECK (role IN ('admin','buyer','assistant')),
       workspace_id TEXT,
+      permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
       password_hash TEXT NOT NULL,
       active BOOLEAN NOT NULL DEFAULT true,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb;`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_workspace ON users (workspace_id);`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS user_sessions (
