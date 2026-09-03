@@ -690,6 +690,27 @@
   *::-webkit-scrollbar-thumb:hover{background:#8e2b42;}
   @media(max-width:850px){.tasks-board{grid-template-columns:repeat(2,minmax(0,1fr));}.daily-tasks-panel{width:100%;flex-basis:auto;}}
   @media(max-width:680px){header{padding:14px 16px;}header h1{min-width:220px!important;}.minon-brand-lockup strong,.minon-brand-lockup em{font-size:18px;}#table-view,#fanpage-view,#dashboardView,#tasksView{padding:14px 12px 28px;}.tasks-board{grid-template-columns:1fr;}}
+  /* PHONE LAYOUT — controls stack before the content becomes cramped. */
+  @media(max-width:760px){
+    header{padding:12px!important;align-items:stretch;gap:10px;flex-wrap:wrap;}
+    header h1{min-width:0!important;width:100%;justify-content:flex-start;}
+    .tabs{order:2;width:100%;overflow-x:auto;justify-content:flex-start;scrollbar-width:none;}.tabs::-webkit-scrollbar{display:none;}
+    .tab-btn{flex:0 0 auto;white-space:nowrap;padding:8px 10px;}
+    .toolbar{order:3;width:100%;justify-content:space-between;gap:6px;}.toolbar .btn{flex:1;padding:8px 7px;font-size:11px;}.toolbar #saveIndicator{display:none;}
+    main{overflow:visible;min-height:0;}
+    #table-view,#fanpage-view,#dashboardView,#tasksView,#report-view{padding:14px 12px 26px!important;}
+    .filters-card{padding:12px!important;gap:10px!important;}.filter-field{width:100%;min-width:0!important;}.filter-field input,.filter-field select{width:100%;min-width:0!important;}
+    .filters-card>.btn,.filters-card>.acc-hidden-toggle{width:100%;align-self:stretch!important;}
+    .acc-hidden-toggle{padding:8px 0;color:var(--text-dim);font-size:12px;}
+    .report-month-bar,.launch-plan-toolbar{flex-wrap:wrap;justify-content:center;}.launch-plan-toolbar>.btn{width:100%;}
+    .section-tabs{width:100%;overflow-x:auto;}.section-tab{flex:1;white-space:nowrap;}
+    #reportTableWrap,#fanpageTableWrap,#accsTreeWrap,#creoTreeWrap,#campaignTreeWrap,#geoCipherTableWrap,#launchPlanTableWrap{overflow-x:auto;}
+    table.report-table,table.accs-table,table.creo-table,table.camp-table,table.launch-plan-table{min-width:650px;}
+    .accs-agent-header,.accs-soc-header{align-items:flex-start;flex-wrap:wrap;padding:10px!important;}.accs-agent-header>span[style],.accs-soc-header>span[style]{min-width:0;}.accs-agent-header .accs-mini-btn,.accs-soc-header .accs-mini-btn{min-height:30px;}
+    .tasks-workspace{gap:12px;}.daily-tasks-panel{width:100%;}
+    .notes-topbar{padding:10px 12px;flex-wrap:wrap;}.notes-topbar .notes-hint{margin-left:0;}.notes-topbar .zoom-controls{margin-left:auto;}
+    .modal{padding:18px!important;max-height:92dvh!important;}.modal-actions{flex-wrap:wrap;}.modal-actions .spacer{display:none;}.modal-actions .btn{flex:1;}
+  }
 </style>
 </head>
 <body>
@@ -845,6 +866,7 @@
               <option value="payment_error">Payment error</option>
             </select>
           </div>
+          <label class="acc-hidden-toggle"><input type="checkbox" id="showHiddenAccs"> Показать скрытые забаненные</label>
           <button class="btn btn-fan" id="addAccBtn" style="align-self:end;">+ Добавить агента</button>
           <button class="btn btn-ghost" id="clearAccFiltersBtn" style="align-self:end;">Сбросить фильтры</button>
           <div class="result-count" id="accResultCount"></div>

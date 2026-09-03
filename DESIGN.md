@@ -64,7 +64,7 @@ Display typography is compressed, all-caps, and limited to the brand lockup. Bod
 
 ## Layout
 
-The application keeps its dense desktop structure. Header, filter bars, and cards use a 10px control rhythm; page panels use 16–20px breathing room. Mobile collapses columns before shrinking controls below a comfortable touch target.
+The application keeps its dense desktop structure. Header, filter bars, and cards use a 10px control rhythm; page panels use 16–20px breathing room. Mobile collapses columns before shrinking controls below a comfortable touch target: navigation and filters wrap into readable rows, while data tables retain their columns inside their own horizontal scroller.
 
 ## Elevation & Depth
 

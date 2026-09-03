@@ -2101,7 +2101,17 @@
     not_spending:  { label: 'Not spending',  color: 'var(--amber)' },
     payment_error: { label: 'Payment error', color: '#e08a3d' }
   };
-  let collapsedAccGroups = new Set();
+  const ACCS_UI_STATE_KEY = 'minon-devils-accs-ui-v1';
+  function loadAccsUiState(){
+    try{ const saved=JSON.parse(localStorage.getItem(ACCS_UI_STATE_KEY)||'{}'); return { collapsed:new Set(Array.isArray(saved.collapsed)?saved.collapsed:[]), showHidden:!!saved.showHidden }; }
+    catch(e){ return { collapsed:new Set(), showHidden:false }; }
+  }
+  const accsUiState=loadAccsUiState();
+  let collapsedAccGroups = accsUiState.collapsed;
+  document.getElementById('showHiddenAccs').checked = accsUiState.showHidden;
+  function saveAccsUiState(){
+    try{ localStorage.setItem(ACCS_UI_STATE_KEY,JSON.stringify({collapsed:[...collapsedAccGroups],showHidden:document.getElementById('showHiddenAccs')?.checked||false})); }catch(e){}
+  }
   function todayStr(){
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
@@ -2171,12 +2181,38 @@
   }
 
   function accsData(){ ensureReportsShape(); return state.reports.accs; }
+  function orderedAgents(acc){
+    return acc.agents.slice().sort((a,b)=>{
+      const ao=Number.isFinite(a.sortOrder)?a.sortOrder:null, bo=Number.isFinite(b.sortOrder)?b.sortOrder:null;
+      if(ao!==null && bo!==null) return ao-bo;
+      if(ao!==null) return -1;
+      if(bo!==null) return 1;
+      return (a.name||'').localeCompare(b.name||'');
+    });
+  }
+  function moveAgent(id, direction){
+    const acc=accsData(); const ordered=orderedAgents(acc); const index=ordered.findIndex(agent=>agent.id===id);
+    const next=index+direction;
+    if(index<0 || next<0 || next>=ordered.length) return;
+    [ordered[index],ordered[next]]=[ordered[next],ordered[index]];
+    ordered.forEach((agent,position)=>{agent.sortOrder=position;});
+    saveState(true); renderAccsView(); showToast('Порядок агентов сохранён');
+  }
+  function toggleAccountHidden(id){
+    const account=accsData().accounts.find(item=>item.id===id);
+    if(!account) return;
+    account.hidden=!account.hidden;
+    saveState(true); renderAccsView(); showToast(account.hidden?'Аккаунт скрыт':'Аккаунт возвращён');
+  }
 
   // ---- Agent CRUD ----
   function openAgentEditor(id){
     const isEdit = !!id;
     const acc = accsData();
-    const item = isEdit ? acc.agents.find(a=>a.id===id) : { id: uid(), name: '' };
+    // Older workspaces predate sortOrder. Give those agents a stable position
+    // before adding a new one, so the new agent is actually appended.
+    if(!isEdit) orderedAgents(acc).forEach((agent, position)=>{ agent.sortOrder=position; });
+    const item = isEdit ? acc.agents.find(a=>a.id===id) : { id: uid(), name: '', sortOrder: acc.agents.length };
     if(isEdit && !item) return;
 
     const overlay = document.createElement('div');
@@ -2309,7 +2345,7 @@
   function openAccountEditor(socId, id){
     const isEdit = !!id;
     const acc = accsData();
-    const item = isEdit ? acc.accounts.find(a=>a.id===id) : { id: uid(), socId, accId:'', dateIssued: todayStr(), dateBan:'', status:'approved', note:'' };
+    const item = isEdit ? acc.accounts.find(a=>a.id===id) : { id: uid(), socId, accId:'', dateIssued: todayStr(), dateBan:'', status:'approved', note:'', hidden:false };
     if(isEdit && !item) return;
 
     const overlay = document.createElement('div');
@@ -2449,7 +2485,7 @@
     const agentSel = document.getElementById('accAgentFilter');
     const socSel = document.getElementById('accSocFilter');
     const curAgent = agentSel.value, curSoc = socSel.value;
-    agentSel.innerHTML = '<option value="">Все</option>' + acc.agents.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(a=>`<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+    agentSel.innerHTML = '<option value="">Все</option>' + orderedAgents(acc).map(a=>`<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
     socSel.innerHTML = '<option value="">Все</option>' + acc.socs.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
     agentSel.value = curAgent; socSel.value = curSoc;
   }
@@ -2461,23 +2497,24 @@
     const agentFilter = document.getElementById('accAgentFilter').value;
     const socFilter = document.getElementById('accSocFilter').value;
     const statusFilter = document.getElementById('accStatusFilter').value;
+    const showHidden = document.getElementById('showHiddenAccs').checked;
 
     const socById = {}; acc.socs.forEach(s=>socById[s.id]=s);
 
-    let agents = acc.agents.slice();
+    let agents = orderedAgents(acc);
     if(agentFilter) agents = agents.filter(a=>a.id===agentFilter);
 
     let totalShown = 0;
     let html = '';
 
-    agents.sort((a,b)=>a.name.localeCompare(b.name)).forEach(agent => {
+    agents.forEach((agent, agentIndex) => {
       let socsOfAgent = acc.socs.filter(s=>s.agentId===agent.id);
       if(socFilter) socsOfAgent = socsOfAgent.filter(s=>s.id===socFilter);
 
       // pre-filter accounts per soc to know whether this agent/soc should show at all
       const socBlocks = [];
       socsOfAgent.sort((a,b)=>a.name.localeCompare(b.name)).forEach(soc => {
-        let accountsOfSoc = acc.accounts.filter(a=>a.socId===soc.id);
+        let accountsOfSoc = acc.accounts.filter(a=>a.socId===soc.id && (showHidden || !a.hidden));
         if(statusFilter) accountsOfSoc = accountsOfSoc.filter(a=>a.status===statusFilter);
         if(search){
           const socMatches = soc.name.toLowerCase().includes(search) || (soc.adsPowerId||'').toLowerCase().includes(search) || (soc.pixel||'').toLowerCase().includes(search);
@@ -2505,6 +2542,8 @@
           <span class="accs-caret ${agentOpen?'open':''}">▸</span>
           <span style="flex:1;">${escapeHtml(agent.name)} <span class="count">— ${socBlocks.length} soc, ${agentAccCount} акк.</span></span>
           <button type="button" class="accs-mini-btn add-soc-btn" data-agent-id="${agent.id}" title="Добавить soc">+ Soc</button>
+          <button type="button" class="accs-mini-btn move-agent-up-btn" data-agent-id="${agent.id}" title="Выше" ${agentIndex===0?'disabled':''}>↑</button>
+          <button type="button" class="accs-mini-btn move-agent-down-btn" data-agent-id="${agent.id}" title="Ниже" ${agentIndex===agents.length-1?'disabled':''}>↓</button>
           <button type="button" class="accs-mini-btn edit-agent-btn" data-agent-id="${agent.id}" title="Переименовать">✎</button>
           <button type="button" class="accs-mini-btn del-agent-btn" data-agent-id="${agent.id}" title="Удалить">✕</button>
         </div>`;
@@ -2538,6 +2577,7 @@
                   <td><button type="button" class="accs-status-badge status-click" data-acc-id="${a.id}" style="color:${st.color}; border-color:${st.color}; background:${st.color}22;">${st.label}</button></td>
                   <td><button type="button" class="accs-note-btn note-click" data-acc-id="${a.id}" title="${a.note ? escapeHtml(a.note) : 'Добавить заметку'}">${a.note ? '📝' : '+ заметка'}</button></td>
                   <td style="text-align:right;">
+                    ${((a.status==='disabled')||a.dateBan) ? `<button type="button" class="accs-mini-btn hide-acc-btn" data-acc-id="${a.id}" title="${a.hidden?'Вернуть':'Скрыть'}">${a.hidden?'↺':'◉'}</button>` : ''}
                     <button type="button" class="accs-mini-btn edit-acc-btn" data-acc-id="${a.id}" title="Изменить">✎</button>
                     <button type="button" class="accs-mini-btn del-acc-btn" data-acc-id="${a.id}" title="Удалить">✕</button>
                   </td>
@@ -2562,6 +2602,10 @@
     wrap.addEventListener('click', safe((e)=>{
       const addSocBtn = e.target.closest('.add-soc-btn');
       if(addSocBtn){ openSocEditor(addSocBtn.dataset.agentId, null); return; }
+      const moveUpBtn = e.target.closest('.move-agent-up-btn');
+      if(moveUpBtn && !moveUpBtn.disabled){ moveAgent(moveUpBtn.dataset.agentId, -1); return; }
+      const moveDownBtn = e.target.closest('.move-agent-down-btn');
+      if(moveDownBtn && !moveDownBtn.disabled){ moveAgent(moveDownBtn.dataset.agentId, 1); return; }
       const editAgentBtn = e.target.closest('.edit-agent-btn');
       if(editAgentBtn){ openAgentEditor(editAgentBtn.dataset.agentId); return; }
       const delAgentBtn = e.target.closest('.del-agent-btn');
@@ -2582,12 +2626,15 @@
       if(editAccBtn){ openAccountEditor(null, editAccBtn.dataset.accId); return; }
       const delAccBtn = e.target.closest('.del-acc-btn');
       if(delAccBtn){ deleteAccount(delAccBtn.dataset.accId); return; }
+      const hideAccBtn = e.target.closest('.hide-acc-btn');
+      if(hideAccBtn){ toggleAccountHidden(hideAccBtn.dataset.accId); return; }
 
       const groupHeader = e.target.closest('.accs-agent-header, .accs-soc-header');
       if(groupHeader){
         const key = groupHeader.dataset.groupKey;
         if(collapsedAccGroups.has(key)) collapsedAccGroups.delete(key);
         else collapsedAccGroups.add(key);
+        saveAccsUiState();
         renderAccsView();
         return;
       }
@@ -2595,12 +2642,14 @@
   }
 
   document.getElementById('addAccBtn').addEventListener('click', safe(()=>openAgentEditor(null)));
-  ['accSearch','accAgentFilter','accSocFilter','accStatusFilter'].forEach(id=>{
+  ['accSearch','accAgentFilter','accSocFilter','accStatusFilter','showHiddenAccs'].forEach(id=>{
     document.getElementById(id).addEventListener('input', renderAccsView);
-    document.getElementById(id).addEventListener('change', renderAccsView);
+    document.getElementById(id).addEventListener('change', ()=>{saveAccsUiState();renderAccsView();});
   });
   document.getElementById('clearAccFiltersBtn').addEventListener('click', ()=>{
     ['accSearch','accAgentFilter','accSocFilter','accStatusFilter'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('showHiddenAccs').checked=false;
+    saveAccsUiState();
     renderAccsView();
   });
 
