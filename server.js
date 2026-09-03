@@ -218,7 +218,7 @@ app.get('/api/time', (req, res) => {
 // Everything below this line is private workspace data.
 app.use('/api', requireAuth);
 
-app.get('/api/users', requireRole('admin','buyer'), async (req,res)=>{
+app.get('/api/users', requireRole('admin'), async (req,res)=>{
   try{
     const result=req.user.role==='admin'
       ? await pool.query('SELECT id,email,display_name,role,workspace_id,permissions,active,created_at FROM users ORDER BY created_at')
@@ -227,17 +227,20 @@ app.get('/api/users', requireRole('admin','buyer'), async (req,res)=>{
   }catch(e){ res.status(500).json({error:'Не удалось загрузить пользователей'}); }
 });
 
-app.post('/api/users', requireRole('admin','buyer'), async (req,res)=>{
+app.post('/api/users', requireRole('admin'), async (req,res)=>{
   try{
     const email=String(req.body?.email||'').trim().toLowerCase();
     const displayName=String(req.body?.name||'').trim();
     const password=String(req.body?.password||'');
     const requestedRole=String(req.body?.role||'assistant');
     if(!/^\S+@\S+\.\S+$/.test(email) || !displayName || password.length<8) return res.status(400).json({error:'Укажите имя, корректный email и пароль от 8 символов'});
-    if(req.user.role==='buyer' && requestedRole!=='assistant') return res.status(403).json({error:'Баер может создавать только ассистентов'});
     if(!['buyer','assistant'].includes(requestedRole)) return res.status(400).json({error:'Недопустимая роль'});
     const id=uid();
-    const workspaceId=requestedRole==='buyer' ? id : (req.user.role==='admin' ? String(req.body?.workspaceId||'main') : req.user.workspaceId);
+    const workspaceId=requestedRole==='buyer' ? id : String(req.body?.workspaceId||'');
+    if(requestedRole==='assistant'){
+      const buyer=await pool.query(`SELECT id FROM users WHERE id=$1 AND role='buyer' AND active=true`,[workspaceId]);
+      if(!buyer.rows.length) return res.status(400).json({error:'Выберите активного баера для ассистента'});
+    }
     const permissions=requestedRole==='assistant' && req.body?.permissions && typeof req.body.permissions==='object' ? req.body.permissions : {};
     await pool.query(
       'INSERT INTO users (id,email,display_name,role,workspace_id,permissions,password_hash) VALUES ($1,$2,$3,$4,$5,$6,$7)',
@@ -250,12 +253,11 @@ app.post('/api/users', requireRole('admin','buyer'), async (req,res)=>{
   }
 });
 
-app.patch('/api/users/:id', requireRole('admin','buyer'), async (req,res)=>{
+app.patch('/api/users/:id', requireRole('admin'), async (req,res)=>{
   try{
     const target=await pool.query('SELECT id,role,workspace_id FROM users WHERE id=$1',[req.params.id]);
     if(!target.rows.length) return res.status(404).json({error:'Пользователь не найден'});
     const row=target.rows[0];
-    if(req.user.role==='buyer' && (row.role!=='assistant' || row.workspace_id!==req.user.workspaceId)) return res.status(403).json({error:'Недостаточно прав'});
     const permissions=req.body?.permissions && typeof req.body.permissions==='object' ? req.body.permissions : null;
     if(permissions && row.role!=='assistant') return res.status(400).json({error:'Права модулей назначаются только ассистенту'});
     await pool.query('UPDATE users SET active=$2, permissions=COALESCE($3,permissions) WHERE id=$1',[row.id,!!req.body?.active,permissions?JSON.stringify(permissions):null]);
@@ -264,9 +266,9 @@ app.patch('/api/users/:id', requireRole('admin','buyer'), async (req,res)=>{
 });
 
 const ACTIVITY_LOG_LIMIT = 300;
-async function logActivity(action){
+async function logActivity(user, action){
   try{
-    await pool.query('INSERT INTO activity_log (user_email, action) VALUES ($1,$2)', ['team', action]);
+    await pool.query('INSERT INTO activity_log (user_email, action, workspace_id) VALUES ($1,$2,$3)', [user?.email||'system', action, user?.workspaceId||'main']);
     await pool.query(
       `DELETE FROM activity_log WHERE id NOT IN (
          SELECT id FROM activity_log ORDER BY created_at DESC LIMIT $1
@@ -359,6 +361,7 @@ app.put('/api/entities/:type/:id', async (req, res) => {
     );
 
     if(notifyMsg) await sendTaskTelegramOnce(id, notifyEventKey, notifyMsg);
+    logActivity(req.user, `${existing ? 'Изменил' : 'Создал'}: ${type}`);
     res.json({ ok: true });
   }catch(e){
     console.error(e);
@@ -388,6 +391,7 @@ app.delete('/api/entities/:type/:id', async (req, res) => {
     }
     await pool.query('DELETE FROM entities WHERE id=$1 AND workspace_id=$2', [id,workspaceId]);
     if(notifyMsg) await sendTaskTelegramOnce(id, 'deleted', notifyMsg);
+    logActivity(req.user, `Удалил: ${type}`);
     res.json({ ok: true });
   }catch(e){
     console.error(e);
@@ -413,7 +417,7 @@ app.post('/api/entities/bulk', async (req, res) => {
       );
     }
     await client.query('COMMIT');
-    logActivity('bulk imported ' + items.length + ' entities');
+    logActivity(req.user, 'Импортировал ' + items.length + ' записей');
     res.json({ ok: true, count: items.length });
   }catch(e){
     await client.query('ROLLBACK');
@@ -487,7 +491,7 @@ app.post('/api/trash/:id/restore', async (req, res) => {
     );
     await client.query('DELETE FROM trash WHERE id=$1', [req.params.id]);
     await client.query('COMMIT');
-    logActivity('restored ' + type + ' ' + id);
+    logActivity(req.user, `Восстановил: ${type}`);
     res.json({ ok: true, type, data });
   }catch(e){
     await client.query('ROLLBACK');
@@ -526,8 +530,10 @@ app.delete('/api/kv/:key', async (req, res) => {
 
 app.get('/api/activity', async (req, res) => {
   try{
-    if(req.user.role!=='admin') return res.status(403).json({error:'Недостаточно прав'});
-    const result = await pool.query('SELECT action, created_at FROM activity_log ORDER BY created_at DESC LIMIT 100');
+    if(!['admin','buyer'].includes(req.user.role)) return res.status(403).json({error:'Недостаточно прав'});
+    const result=req.user.role==='admin'
+      ? await pool.query('SELECT user_email, action, created_at FROM activity_log ORDER BY created_at DESC LIMIT 100')
+      : await pool.query('SELECT user_email, action, created_at FROM activity_log WHERE workspace_id=$1 AND user_email<>$2 ORDER BY created_at DESC LIMIT 100',[req.user.workspaceId,req.user.email]);
     res.json({ entries: result.rows });
   }catch(e){
     res.status(500).json({ error: 'DB error: ' + e.message });

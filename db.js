@@ -85,6 +85,8 @@ async function initSchema(){
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  await pool.query(`ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'main';`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_activity_workspace ON activity_log (workspace_id, created_at DESC);`);
 
   // A durable idempotency guard for Telegram. Browser saves can be retried or overlap,
   // but one task event must result in one chat message.

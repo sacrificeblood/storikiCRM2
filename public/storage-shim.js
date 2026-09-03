@@ -102,9 +102,12 @@
         Object.entries(sheets).forEach(([right,ids])=>ids.forEach(id=>{if(!user.permissions?.[right])document.getElementById(id).style.display='none';}));
         if(!user.permissions?.reports && !user.permissions?.accs && !user.permissions?.creatives && !user.permissions?.campaigns) document.getElementById('tabReportBtn').style.display='none';
       }
-      if(user.role==='admin' || user.role==='buyer') document.getElementById('peopleBtn').style.display='inline-flex';
+      if(user.role==='admin') document.getElementById('peopleBtn').style.display='inline-flex';
+      if(user.role==='buyer') document.getElementById('activityBtn').style.display='inline-flex';
+      if(user.role!=='admin'){ document.getElementById('trashBtn').style.display='none'; document.getElementById('backupsBtn').style.display='none'; document.getElementById('peopleBtn').style.display='none'; }
       if(user.role!=='admin') document.getElementById('addTaskBtn').style.display='none';
       document.getElementById('peopleBtn').addEventListener('click',()=>location.href='/people.html');
+      document.getElementById('activityBtn').addEventListener('click',()=>location.href='/activity.html');
       document.getElementById('logoutBtn').addEventListener('click',async()=>{
         await fetch('/api/auth/logout',{method:'POST',credentials:'include'}); location.replace('/login');
       });
