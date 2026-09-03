@@ -2103,12 +2103,22 @@
   };
   const ACCS_UI_STATE_KEY = 'minon-devils-accs-ui-v1';
   function loadAccsUiState(){
-    try{ const saved=JSON.parse(localStorage.getItem(ACCS_UI_STATE_KEY)||'{}'); return new Set(Array.isArray(saved.collapsed)?saved.collapsed:[]); }
-    catch(e){ return new Set(); }
+    try{
+      const saved=JSON.parse(localStorage.getItem(ACCS_UI_STATE_KEY)||'{}');
+      return { collapsed:new Set(Array.isArray(saved.collapsed)?saved.collapsed:[]), filters:saved.filters||{} };
+    }catch(e){ return { collapsed:new Set(), filters:{} }; }
   }
-  let collapsedAccGroups = loadAccsUiState();
+  const accsUiState=loadAccsUiState();
+  let collapsedAccGroups = accsUiState.collapsed;
+  let pendingAccFilters = accsUiState.filters;
+  ['accSearch','accAgentFilter','accSocFilter','accStatusFilter'].forEach(id=>{
+    document.getElementById(id).value=accsUiState.filters[id]||'';
+  });
   function saveAccsUiState(){
-    try{ localStorage.setItem(ACCS_UI_STATE_KEY,JSON.stringify({collapsed:[...collapsedAccGroups]})); }catch(e){}
+    try{
+      const filters=Object.fromEntries(['accSearch','accAgentFilter','accSocFilter','accStatusFilter'].map(id=>[id,document.getElementById(id).value]));
+      localStorage.setItem(ACCS_UI_STATE_KEY,JSON.stringify({collapsed:[...collapsedAccGroups],filters}));
+    }catch(e){}
   }
   function todayStr(){
     const d = new Date();
@@ -2482,10 +2492,12 @@
     const acc = accsData();
     const agentSel = document.getElementById('accAgentFilter');
     const socSel = document.getElementById('accSocFilter');
-    const curAgent = agentSel.value, curSoc = socSel.value;
+    const curAgent = agentSel.value || pendingAccFilters.accAgentFilter || '';
+    const curSoc = socSel.value || pendingAccFilters.accSocFilter || '';
     agentSel.innerHTML = '<option value="">Все</option>' + orderedAgents(acc).map(a=>`<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
     socSel.innerHTML = '<option value="">Все</option>' + acc.socs.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
     agentSel.value = curAgent; socSel.value = curSoc;
+    pendingAccFilters = {};
   }
 
   function renderAccsView(){
@@ -2640,7 +2652,7 @@
 
   document.getElementById('addAccBtn').addEventListener('click', safe(()=>openAgentEditor(null)));
   ['accSearch','accAgentFilter','accSocFilter','accStatusFilter'].forEach(id=>{
-    document.getElementById(id).addEventListener('input', renderAccsView);
+    document.getElementById(id).addEventListener('input', ()=>{saveAccsUiState();renderAccsView();});
     document.getElementById(id).addEventListener('change', ()=>{saveAccsUiState();renderAccsView();});
   });
   document.getElementById('clearAccFiltersBtn').addEventListener('click', ()=>{
