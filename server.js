@@ -144,7 +144,7 @@ const FEATURE_TYPES={
 };
 function featureForType(type){ return Object.keys(FEATURE_TYPES).find(key=>FEATURE_TYPES[key].includes(type)); }
 function publicUser(row){ return { id:row.id, email:row.email, name:row.display_name, role:row.role, workspaceId:row.workspace_id, permissions:row.permissions||{} }; }
-function hasFeatureAccess(user,type){ return user.role!=='assistant' || !!user.permissions?.[featureForType(type)]; }
+function hasEditAccess(user,type){ return user.role!=='assistant' || !!user.permissions?.[featureForType(type)]; }
 async function requireAuth(req,res,next){
   try{
     const token=readCookie(req,SESSION_COOKIE);
@@ -163,7 +163,7 @@ function requireRole(...roles){ return (req,res,next)=>roles.includes(req.user.r
 function workspaceFor(req){ return req.user.role==='admin' ? 'main' : req.user.workspaceId; }
 function canEditEntity(req, type, existing){
   if(req.user.role==='admin') return true;
-  if(req.user.role==='assistant') return type==='task' && !!existing;
+  if(req.user.role==='assistant') return hasEditAccess(req.user,type) && (type!=='task' || !!existing);
   return type!=='task' || !!existing;
 }
 function setSessionCookie(res, token){
@@ -259,8 +259,13 @@ app.patch('/api/users/:id', requireRole('admin'), async (req,res)=>{
     if(!target.rows.length) return res.status(404).json({error:'Пользователь не найден'});
     const row=target.rows[0];
     const permissions=req.body?.permissions && typeof req.body.permissions==='object' ? req.body.permissions : null;
+    const workspaceId=req.body?.workspaceId ? String(req.body.workspaceId) : null;
     if(permissions && row.role!=='assistant') return res.status(400).json({error:'Права модулей назначаются только ассистенту'});
-    await pool.query('UPDATE users SET active=$2, permissions=COALESCE($3,permissions) WHERE id=$1',[row.id,!!req.body?.active,permissions?JSON.stringify(permissions):null]);
+    if(workspaceId && row.role==='assistant'){
+      const buyer=await pool.query(`SELECT id FROM users WHERE id=$1 AND role='buyer'`,[workspaceId]);
+      if(!buyer.rows.length) return res.status(400).json({error:'Связать можно только с баером'});
+    }
+    await pool.query('UPDATE users SET active=$2, permissions=COALESCE($3,permissions), workspace_id=COALESCE($4,workspace_id) WHERE id=$1',[row.id,!!req.body?.active,permissions?JSON.stringify(permissions):null,workspaceId]);
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:'Не удалось обновить пользователя'}); }
 });
@@ -288,7 +293,7 @@ app.get('/api/entities', async (req, res) => {
     const result = req.user.role==='admin'
       ? await pool.query('SELECT id, type, data, updated_at FROM entities WHERE workspace_id=$1',['main'])
       : await pool.query('SELECT id, type, data, updated_at FROM entities WHERE workspace_id=$1',[req.user.workspaceId]);
-    res.json({ entities: result.rows.filter(row=>hasFeatureAccess(req.user,row.type)) });
+    res.json({ entities: result.rows });
   }catch(e){
     console.error(e);
     res.status(500).json({ error: 'DB error: ' + e.message });
@@ -320,7 +325,6 @@ app.put('/api/entities/:type/:id', async (req, res) => {
     const { type, id } = req.params;
     let data = req.body;
     if(typeof data !== 'object' || data === null) return res.status(400).json({ error: 'body must be a JSON object' });
-    if(!hasFeatureAccess(req.user,type)) return res.status(403).json({error:'Нет доступа к этому разделу'});
 
     const workspaceId=workspaceFor(req);
     const existingResult=await pool.query('SELECT type,data,workspace_id FROM entities WHERE id=$1',[id]);
@@ -376,7 +380,6 @@ function escapeHtmlTg(s){
 app.delete('/api/entities/:type/:id', async (req, res) => {
   try{
     const { type, id } = req.params;
-    if(!hasFeatureAccess(req.user,type)) return res.status(403).json({error:'Нет доступа к этому разделу'});
     const workspaceId=workspaceFor(req);
     const found=await pool.query('SELECT type,data,workspace_id FROM entities WHERE id=$1',[id]);
     if(!found.rows.length) return res.status(404).json({error:'Не найдено'});
@@ -433,7 +436,7 @@ app.post('/api/entities/bulk', async (req, res) => {
 app.get('/api/trash', async (req, res) => {
   try{
     const result = await pool.query('SELECT id, type, data, label, deleted_at FROM trash WHERE workspace_id=$1 ORDER BY deleted_at DESC LIMIT 200',[workspaceFor(req)]);
-    res.json({ entries: result.rows.filter(row=>hasFeatureAccess(req.user,row.type)) });
+    res.json({ entries: result.rows });
   }catch(e){
     res.status(500).json({ error: 'DB error: ' + e.message });
   }
@@ -443,7 +446,6 @@ app.post('/api/trash', async (req, res) => {
   try{
     const { id, type, data, label } = req.body || {};
     if(!id || !type) return res.status(400).json({ error: 'id and type required' });
-    if(!hasFeatureAccess(req.user,type)) return res.status(403).json({error:'Нет доступа к этому разделу'});
     if(!canEditEntity(req,type,{}) || type==='task' && req.user.role!=='admin') return res.status(403).json({error:'Недостаточно прав'});
     await pool.query(
       `INSERT INTO trash (id, type, data, label, workspace_id, deleted_at) VALUES ($1,$2,$3,$4,$5, now())
@@ -480,7 +482,6 @@ app.post('/api/trash/:id/restore', async (req, res) => {
       return res.status(404).json({ error: 'trash entry not found' });
     }
     const { id, type, data, workspace_id } = found.rows[0];
-    if(!hasFeatureAccess(req.user,type)){ await client.query('ROLLBACK'); return res.status(403).json({error:'Нет доступа к этому разделу'}); }
     if(!canEditEntity(req,type,{}) || type==='task' && req.user.role!=='admin'){
       await client.query('ROLLBACK'); return res.status(403).json({error:'Недостаточно прав'});
     }

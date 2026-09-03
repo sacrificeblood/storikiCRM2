@@ -95,13 +95,6 @@
       const {user}=await res.json();
       window.currentUser=user;
       document.body.dataset.role=user.role;
-      if(user.role==='assistant'){
-        const tabs={dashboard:'tabDashboardBtn',reports:'tabReportBtn',tasks:'tabTasksBtn',notes:'tabNotesBtn'};
-        Object.entries(tabs).forEach(([right,id])=>{ if(!user.permissions?.[right]) document.getElementById(id).style.display='none'; });
-        const sheets={reports:['sheetSpendRevBtn'],accs:['sheetAccsBtn'],creatives:['sheetCreoBtn'],campaigns:['sheetCampaignBtn','sheetGeoCipherBtn']};
-        Object.entries(sheets).forEach(([right,ids])=>ids.forEach(id=>{if(!user.permissions?.[right])document.getElementById(id).style.display='none';}));
-        if(!user.permissions?.reports && !user.permissions?.accs && !user.permissions?.creatives && !user.permissions?.campaigns) document.getElementById('tabReportBtn').style.display='none';
-      }
       if(user.role==='admin') document.getElementById('peopleBtn').style.display='inline-flex';
       if(user.role==='buyer') document.getElementById('activityBtn').style.display='inline-flex';
       if(user.role!=='admin'){ document.getElementById('trashBtn').style.display='none'; document.getElementById('backupsBtn').style.display='none'; document.getElementById('peopleBtn').style.display='none'; }
