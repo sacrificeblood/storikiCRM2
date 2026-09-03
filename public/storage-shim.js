@@ -99,9 +99,10 @@
       const available=canvases.canvases||[];
       const stored=localStorage.getItem('minon-active-canvas');
       const transferredMain=available.some(x=>x.id==='main'&&String(x.owner_name||'').toLowerCase()==='minon');
-      const transferSeen=localStorage.getItem('minon-main-transfer-v1')==='done';
+      const transferKey=`minon-main-transfer-v2:${user.id}`;
+      const transferSeen=localStorage.getItem(transferKey)==='done';
       window.activeWorkspace=transferredMain&&!transferSeen?'main':(stored&&available.some(x=>x.id===stored)?stored:(user.role==='admin'?'main':(available[0]?.id||user.workspaceId)));
-      if(transferredMain&&!transferSeen){ localStorage.setItem('minon-active-canvas','main'); localStorage.setItem('minon-main-transfer-v1','done'); }
+      if(transferredMain&&!transferSeen){ localStorage.setItem('minon-active-canvas','main'); localStorage.setItem(transferKey,'done'); }
       if(user.role==='admin' || available.length>1){
         const select=document.getElementById('workspaceSwitcher'); select.style.display='inline-block';
         select.innerHTML=available.map(x=>`<option value="${x.id}">${x.owner_name}: ${x.name}</option>`).join('');

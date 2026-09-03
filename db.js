@@ -88,13 +88,9 @@ async function initSchema(){
       JOIN crm_canvases ON crm_canvases.id='main' AND crm_canvases.owner_id=users.id
       WHERE users.role='buyer' AND users.active=true AND lower(users.display_name)=lower('minon')
       LIMIT 1
-    ), claimed AS (
-      INSERT INTO app_migrations (key)
-      SELECT 'share-main-canvas-with-minon-assistants-v1' FROM buyer
-      ON CONFLICT DO NOTHING RETURNING key
     )
     INSERT INTO canvas_access (canvas_id,user_id)
-    SELECT 'main', users.id FROM users, buyer, claimed
+    SELECT 'main', users.id FROM users, buyer
     WHERE users.role='assistant' AND users.active=true AND users.workspace_id=buyer.id
     ON CONFLICT DO NOTHING
   `);
