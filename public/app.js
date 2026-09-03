@@ -4005,6 +4005,7 @@
   }
 
   function renderDailyTasks(tasks, matches){
+    const canManageTasks=!window.currentUser || window.currentUser.role==='admin';
     const wrap = document.getElementById('dailyTasksWrap');
     const dailyTasks = tasks.filter(t=>t.dailyReminder).filter(matches);
     const cards = dailyTasks.map(t=>{
@@ -4014,14 +4015,16 @@
         ${t.description ? `<div class="daily-task-card-desc">${escapeHtml(t.description)}</div>` : ''}
         <div class="task-meta"><span class="task-reminder-badge">⏰ ${escapeHtml(t.reminderTime||'10:00')} Киев</span><span class="task-countdown" data-reminder-countdown="${t.id}">${escapeHtml(reminderCountdown(t))}</span></div>
         <div class="daily-task-actions" style="margin-top:8px;">
+          ${canManageTasks ? `
           <button type="button" class="task-complete-btn daily-complete-btn" data-task-id="${t.id}" ${done?'disabled':''}>${done?'✓ Выполнено':'✓ Выполнить'}</button>
           <button type="button" class="task-reminder-toggle ${t.remindersEnabled === false ? '' : 'on'} daily-reminder-toggle" data-task-id="${t.id}">${t.remindersEnabled === false ? '🔕 Выкл.' : '🔔 Вкл.'}</button>
           <button type="button" class="timer-lever ${t.manualReminderStartedAt ? 'on' : ''} daily-timer-lever" data-task-id="${t.id}" ${t.manualReminderStartedAt ? 'disabled' : ''}><span class="lever-dot"></span>${t.manualReminderStartedAt ? 'Таймер запущен' : 'Запустить 5 мин'}</button>
+          ` : ''}
           ${done ? '<span class="daily-task-done">Готово сегодня</span>' : ''}
         </div>
       </div>`;
     }).join('');
-    wrap.innerHTML = `<section class="daily-tasks-panel"><div class="daily-tasks-title"><span>⏰ Ежедневные задачи</span><button type="button" class="btn btn-ghost daily-add-btn" style="padding:5px 8px;">+ Добавить</button></div><div class="daily-tasks-list">${cards || '<div class="tasks-empty">Нет ежедневных задач</div>'}</div></section>`;
+    wrap.innerHTML = `<section class="daily-tasks-panel"><div class="daily-tasks-title"><span>⏰ Ежедневные задачи</span>${canManageTasks?'<button type="button" class="btn btn-ghost daily-add-btn" style="padding:5px 8px;">+ Добавить</button>':''}</div><div class="daily-tasks-list">${cards || '<div class="tasks-empty">Нет ежедневных задач</div>'}</div></section>`;
   }
 
   function openTaskEditor(id, dailyPreset){
@@ -4167,6 +4170,7 @@
   }
 
   function renderTasksView(){
+    const canManageTasks=!window.currentUser || window.currentUser.role==='admin';
     const tasks = tasksData();
     const wrap = document.getElementById('tasksBoardWrap');
     const search = (document.getElementById('taskSearchInput').value || '').trim().toLowerCase();
@@ -4192,9 +4196,9 @@
             <div class="task-move-row">
               <button type="button" class="task-move-btn move-left-btn" data-task-id="${t.id}" ${colIdx===0?'disabled':''} title="Назад">←</button>
               <button type="button" class="task-move-btn move-right-btn" data-task-id="${t.id}" ${colIdx>=TASK_COLUMNS.length-2?'disabled':''} title="Вперёд">→</button>
-              ${col.key==='confirm' ? `<button type="button" class="task-complete-btn complete-task-btn" data-task-id="${t.id}">✓ Подтвердить</button>` : ''}
-              ${t.dailyReminder ? `<button type="button" class="task-reminder-toggle ${t.remindersEnabled === false ? '' : 'on'}" data-task-id="${t.id}" title="Включить или выключить напоминания">${t.remindersEnabled === false ? '🔕 Выкл.' : '🔔 Вкл.'}</button>` : ''}
-              <button type="button" class="task-del-btn" data-task-id="${t.id}" title="Удалить">✕</button>
+              ${canManageTasks && col.key==='confirm' ? `<button type="button" class="task-complete-btn complete-task-btn" data-task-id="${t.id}">✓ Подтвердить</button>` : ''}
+              ${canManageTasks && t.dailyReminder ? `<button type="button" class="task-reminder-toggle ${t.remindersEnabled === false ? '' : 'on'}" data-task-id="${t.id}" title="Включить или выключить напоминания">${t.remindersEnabled === false ? '🔕 Выкл.' : '🔔 Вкл.'}</button>` : ''}
+              ${canManageTasks?`<button type="button" class="task-del-btn" data-task-id="${t.id}" title="Удалить">✕</button>`:''}
             </div>
           </div>`;
         });
@@ -4226,7 +4230,7 @@
       const delBtn = e.target.closest('.task-del-btn');
       if(delBtn){ deleteTask(delBtn.dataset.taskId); return; }
       const card = e.target.closest('.task-card');
-      if(card){ openTaskEditor(card.dataset.taskId); return; }
+      if(card && (!window.currentUser || window.currentUser.role==='admin')){ openTaskEditor(card.dataset.taskId); return; }
     }));
     dailyWrap.addEventListener('click', safe((e)=>{
       const completeBtn = e.target.closest('.daily-complete-btn');
@@ -4238,10 +4242,10 @@
       const addBtn = e.target.closest('.daily-add-btn');
       if(addBtn){ openTaskEditor(null, true); return; }
       const card = e.target.closest('.daily-task-card');
-      if(card){ openTaskEditor(card.dataset.taskId); }
+      if(card && (!window.currentUser || window.currentUser.role==='admin')){ openTaskEditor(card.dataset.taskId); }
     }));
   }
-  document.getElementById('addTaskBtn').addEventListener('click', safe(()=>openTaskEditor(null)));
+  document.getElementById('addTaskBtn').addEventListener('click', safe(()=>{ if(!window.currentUser || window.currentUser.role==='admin') openTaskEditor(null); }));
   document.getElementById('taskSearchInput').addEventListener('input', ()=>{ if(currentView==='tasks') renderTasksView(); });
   document.getElementById('taskViewFilter').addEventListener('change', ()=>{ if(currentView==='tasks') renderTasksView(); });
   syncServerClock().catch(()=>{});

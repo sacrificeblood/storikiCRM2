@@ -88,5 +88,21 @@
     }
   };
 
-  window.__startBoard();
+  async function startAuthenticatedBoard(){
+    try{
+      const res=await fetch('/api/auth/me',{credentials:'include'});
+      if(!res.ok) return location.replace('/login');
+      const {user}=await res.json();
+      window.currentUser=user;
+      document.body.dataset.role=user.role;
+      if(user.role==='admin' || user.role==='buyer') document.getElementById('peopleBtn').style.display='inline-flex';
+      if(user.role!=='admin') document.getElementById('addTaskBtn').style.display='none';
+      document.getElementById('peopleBtn').addEventListener('click',()=>location.href='/people.html');
+      document.getElementById('logoutBtn').addEventListener('click',async()=>{
+        await fetch('/api/auth/logout',{method:'POST',credentials:'include'}); location.replace('/login');
+      });
+      window.__startBoard();
+    }catch(e){ location.replace('/login'); }
+  }
+  startAuthenticatedBoard();
 })();

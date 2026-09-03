@@ -24,6 +24,8 @@ async function initSchema(){
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_entities_type ON entities (type);`);
+  await pool.query(`ALTER TABLE entities ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'main';`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_entities_workspace ON entities (workspace_id);`);
 
   // Deleted items live here for the "История" (trash/restore) feature.
   await pool.query(`
@@ -36,6 +38,31 @@ async function initSchema(){
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_trash_deleted_at ON trash (deleted_at DESC);`);
+  await pool.query(`ALTER TABLE trash ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'main';`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_trash_workspace ON trash (workspace_id);`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      display_name TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('admin','buyer','assistant')),
+      workspace_id TEXT,
+      password_hash TEXT NOT NULL,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_workspace ON users (workspace_id);`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions (user_id);`);
 
   // Legacy single-blob storage — kept only so the one-time migration endpoint can read
   // whatever the old version last saved. Nothing new is written here going forward.
