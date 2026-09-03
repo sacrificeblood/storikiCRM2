@@ -160,7 +160,7 @@ async function requireAuth(req,res,next){
   }catch(e){ next(e); }
 }
 function requireRole(...roles){ return (req,res,next)=>roles.includes(req.user.role)?next():res.status(403).json({error:'Недостаточно прав'}); }
-function workspaceFor(req){ return req.user.role==='admin' ? String(req.query.workspace||'main') : req.user.workspaceId; }
+function workspaceFor(req){ return req.canvasId || (req.user.role==='admin' ? 'main' : req.user.workspaceId); }
 function canEditEntity(req, type, existing){
   if(req.user.role==='admin') return true;
   if(req.user.role==='assistant') return hasEditAccess(req.user,type) && (type!=='task' || !!existing);
@@ -217,6 +217,19 @@ app.get('/api/time', (req, res) => {
 
 // Everything below this line is private workspace data.
 app.use('/api', requireAuth);
+app.use('/api', async (req,res,next)=>{
+  const canvasId=String(req.query.canvas||'');
+  if(!canvasId) return next();
+  try{
+    const found=await pool.query('SELECT owner_id FROM crm_canvases WHERE id=$1',[canvasId]);
+    if(!found.rows.length) return res.status(404).json({error:'CRM-полотно не найдено'});
+    if(req.user.role!=='admin' && found.rows[0].owner_id!==req.user.id){
+      const access=await pool.query('SELECT 1 FROM canvas_access WHERE canvas_id=$1 AND user_id=$2',[canvasId,req.user.id]);
+      if(!access.rows.length) return res.status(403).json({error:'Нет доступа к полотну'});
+    }
+    req.canvasId=canvasId; next();
+  }catch(e){next(e);}
+});
 
 app.get('/api/canvases', async (req,res)=>{
   const sql=req.user.role==='admin'

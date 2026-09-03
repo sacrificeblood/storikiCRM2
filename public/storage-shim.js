@@ -1,5 +1,5 @@
 (function(){
-  const workspace=()=>window.activeWorkspace&&window.activeWorkspace!=='main'?`?workspace=${encodeURIComponent(window.activeWorkspace)}`:'';
+  const workspace=()=>window.activeWorkspace&&window.activeWorkspace!=='main'?`?canvas=${encodeURIComponent(window.activeWorkspace)}`:'';
   // ---------- Entities API — one call per entity, never a shared document ----------
   window.entitiesApi = {
     async loadAll(){
@@ -95,13 +95,13 @@
       if(!res.ok) return location.replace('/login');
       const {user}=await res.json();
       window.currentUser=user;
-      window.activeWorkspace=user.role==='admin'?(localStorage.getItem('minon-admin-workspace')||'main'):user.workspaceId;
-      if(user.role==='admin'){
-        const users=await (await fetch('/api/users',{credentials:'include'})).json();
+      window.activeWorkspace=localStorage.getItem('minon-active-canvas')||'main';
+      const canvases=await (await fetch('/api/canvases',{credentials:'include'})).json();
+      if(user.role==='admin' || user.role==='buyer' || user.role==='assistant'){
         const select=document.getElementById('workspaceSwitcher'); select.style.display='inline-block';
-        select.innerHTML='<option value="main">Моя CRM</option>'+users.users.filter(x=>x.role==='buyer').map(x=>`<option value="${x.id}">CRM: ${x.name}</option>`).join('');
+        select.innerHTML=(user.role==='admin'?'<option value="main">Моя CRM</option>':'')+canvases.canvases.map(x=>`<option value="${x.id}">${x.owner_name}: ${x.name}</option>`).join('');
         select.value=window.activeWorkspace;
-        select.addEventListener('change',()=>{localStorage.setItem('minon-admin-workspace',select.value);location.reload();});
+        select.addEventListener('change',()=>{localStorage.setItem('minon-active-canvas',select.value);location.reload();});
       }
       document.body.dataset.role=user.role;
       if(user.role==='admin') document.getElementById('peopleBtn').style.display='inline-flex';
