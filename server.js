@@ -132,17 +132,23 @@ function readCookie(req, name){
   const found=raw.split(';').map(x=>x.trim()).find(x=>x.startsWith(name+'='));
   return found ? decodeURIComponent(found.slice(name.length+1)) : '';
 }
+function unauthenticated(req,res,message){
+  // Browser pages should land on the login form, while API clients still receive
+  // a machine-readable 401 for their own recovery logic.
+  if(!req.path.startsWith('/api/')) return res.redirect('/login');
+  return res.status(401).json({error:message});
+}
 function publicUser(row){ return { id:row.id, email:row.email, name:row.display_name, role:row.role, workspaceId:row.workspace_id }; }
 async function requireAuth(req,res,next){
   try{
     const token=readCookie(req,SESSION_COOKIE);
-    if(!token) return res.status(401).json({error:'Требуется вход'});
+    if(!token) return unauthenticated(req,res,'Требуется вход');
     const result=await pool.query(
       `SELECT u.id,u.email,u.display_name,u.role,u.workspace_id FROM user_sessions s
        JOIN users u ON u.id=s.user_id
        WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active=true`, [hashToken(token)]
     );
-    if(!result.rows.length) return res.status(401).json({error:'Сессия истекла'});
+    if(!result.rows.length) return unauthenticated(req,res,'Сессия истекла');
     req.user=publicUser(result.rows[0]);
     next();
   }catch(e){ next(e); }
