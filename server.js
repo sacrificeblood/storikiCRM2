@@ -397,10 +397,16 @@ app.post('/api/tasks/:id/start-reminder-timer', async (req, res) => {
     const task = found.rows[0].data || {};
     if(!task.dailyReminder) return res.status(400).json({ error:'task is not daily' });
     const startedAt = new Date().toISOString();
+    const reactivated = !!task.completedForDate || task.column === 'done';
     task.manualReminderStartedAt = startedAt;
     task.remindersEnabled = true;
+    // A deliberate manual start means the task is active again. Otherwise the
+    // reminder worker correctly skips it as already completed for today.
+    delete task.completedForDate;
+    delete task.completedAt;
+    if(task.column === 'done') task.column = 'todo';
     await pool.query(`UPDATE entities SET data=$3, updated_at=now() WHERE id=$1 AND workspace_id=$2`, [req.params.id,workspaceId,JSON.stringify(task)]);
-    res.json({ ok:true, startedAt });
+    res.json({ ok:true, startedAt, reactivated });
   }catch(e){
     console.error('manual reminder timer failed', e);
     res.status(500).json({ error:e.message });

@@ -4164,10 +4164,13 @@
       if(item){
         item.manualReminderStartedAt = result.startedAt;
         item.remindersEnabled = true;
+        delete item.completedForDate;
+        delete item.completedAt;
+        if(item.column==='done') item.column='todo';
         saveState(true);
       }
       render();
-      showToast('Таймер запущен: первое напоминание через 5 минут');
+      showToast(result.reactivated?'Задача снова активна: напоминание через 5 минут':'Таймер запущен: первое напоминание через 5 минут');
     }).catch(e=>{
       showErrorBanner(e.message || 'Не удалось запустить таймер');
     }).finally(()=>{
