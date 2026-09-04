@@ -4008,6 +4008,7 @@
     const role=window.currentUser?.role||'admin';
     const canManageTasks=role==='admin';
     const canCompleteDaily=['admin','buyer','assistant'].includes(role);
+    const canStartDailyTimer=role==='admin'||role==='buyer';
     const wrap = document.getElementById('dailyTasksWrap');
     const dailyTasks = tasks.filter(t=>t.dailyReminder).filter(matches);
     const cards = dailyTasks.map(t=>{
@@ -4020,6 +4021,8 @@
           ${canCompleteDaily ? `<button type="button" class="task-complete-btn daily-complete-btn" data-task-id="${t.id}" ${done?'disabled':''}>${done?'✓ Выполнено':'✓ Выполнить'}</button>` : ''}
           ${canManageTasks ? `
           <button type="button" class="task-reminder-toggle ${t.remindersEnabled === false ? '' : 'on'} daily-reminder-toggle" data-task-id="${t.id}">${t.remindersEnabled === false ? '🔕 Выкл.' : '🔔 Вкл.'}</button>
+          ` : ''}
+          ${canStartDailyTimer ? `
           <button type="button" class="timer-lever ${t.manualReminderStartedAt ? 'on' : ''} daily-timer-lever" data-task-id="${t.id}" ${t.manualReminderStartedAt ? 'disabled' : ''}><span class="lever-dot"></span>${t.manualReminderStartedAt ? 'Таймер запущен' : 'Запустить 5 мин'}</button>
           ` : ''}
           ${done ? '<span class="daily-task-done">Готово сегодня</span>' : ''}

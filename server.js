@@ -390,7 +390,7 @@ app.get('/api/entities', async (req, res) => {
 // server-side so it survives a browser refresh and Railway restart.
 app.post('/api/tasks/:id/start-reminder-timer', async (req, res) => {
   try{
-    if(req.user.role!=='admin') return res.status(403).json({error:'Только администратор может управлять напоминаниями'});
+    if(!['admin','buyer'].includes(req.user.role)) return res.status(403).json({error:'Запускать таймер может администратор или баер'});
     const found = await pool.query(`SELECT data FROM entities WHERE id=$1 AND type='task' AND workspace_id='main'`, [req.params.id]);
     if(!found.rows.length) return res.status(404).json({ error:'task not found' });
     const task = found.rows[0].data || {};
