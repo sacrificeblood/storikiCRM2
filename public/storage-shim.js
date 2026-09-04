@@ -99,15 +99,15 @@
       const available=canvases.canvases||[];
       const stored=localStorage.getItem('minon-active-canvas');
       const transferredMain=available.some(x=>x.id==='main'&&String(x.owner_name||'').toLowerCase()==='minon');
-      const transferKey=`minon-main-transfer-v2:${user.id}`;
-      const transferSeen=localStorage.getItem(transferKey)==='done';
-      window.activeWorkspace=transferredMain&&!transferSeen?'main':(stored&&available.some(x=>x.id===stored)?stored:(user.role==='admin'?'main':(available[0]?.id||user.workspaceId)));
-      if(transferredMain&&!transferSeen){ localStorage.setItem('minon-active-canvas','main'); localStorage.setItem(transferKey,'done'); }
+      const explicitKey=`minon-explicit-canvas:${user.id}`;
+      const explicitCanvas=localStorage.getItem(explicitKey);
+      window.activeWorkspace=explicitCanvas&&available.some(x=>x.id===explicitCanvas)?explicitCanvas:(transferredMain?'main':(stored&&available.some(x=>x.id===stored)?stored:(user.role==='admin'?'main':(available[0]?.id||user.workspaceId))));
+      localStorage.setItem('minon-active-canvas',window.activeWorkspace);
       if(user.role==='admin' || available.length>1){
         const select=document.getElementById('workspaceSwitcher'); select.style.display='inline-block';
         select.innerHTML=available.map(x=>`<option value="${x.id}">${x.owner_name}: ${x.name}</option>`).join('');
         select.value=window.activeWorkspace;
-        select.addEventListener('change',()=>{localStorage.setItem('minon-active-canvas',select.value);location.reload();});
+        select.addEventListener('change',()=>{localStorage.setItem('minon-active-canvas',select.value);localStorage.setItem(explicitKey,select.value);location.reload();});
       }
       document.body.dataset.role=user.role;
       if(user.role==='admin') document.getElementById('peopleBtn').style.display='inline-flex';
