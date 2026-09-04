@@ -166,6 +166,9 @@ function canEditEntity(req, type, existing){
   if(req.user.role==='assistant') return hasEditAccess(req.user,type) && (type!=='task' || !!existing);
   return type!=='task' || !!existing;
 }
+function isDailyTaskCompletion(user, type, existing, nextData){
+  return user.role==='assistant' && type==='task' && !!existing?.data?.dailyReminder && nextData?.column==='done';
+}
 function setSessionCookie(res, token){
   res.cookie(SESSION_COOKIE,token,{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:SESSION_DAYS*24*60*60*1000,path:'/'});
 }
@@ -414,12 +417,26 @@ app.put('/api/entities/:type/:id', async (req, res) => {
     const existing=existingResult.rows[0];
     if(existing && existing.type!==type) return res.status(400).json({error:'Тип записи нельзя изменить'});
     if(existing && existing.workspace_id!==workspaceId) return res.status(403).json({error:'Нет доступа к этому пространству'});
-    if(!canEditEntity(req,type,existing)) return res.status(403).json({error:'Недостаточно прав для изменения'});
+    const assistantDailyCompletion=isDailyTaskCompletion(req.user,type,existing,data);
+    if(!canEditEntity(req,type,existing) && !assistantDailyCompletion) return res.status(403).json({error:'Недостаточно прав для изменения'});
     if(type==='task' && req.user.role!=='admin'){
       if(!existing) return res.status(403).json({error:'Создавать задачи может только администратор'});
-      // Buyers and assistants only move existing cards between statuses. The server
-      // preserves every other field even if a modified payload is sent manually.
-      data={...(existing.data||{}),column:data.column};
+      // Non-admins can move existing cards without changing their content. Buyers
+      // may confirm any task; assistants may additionally confirm daily tasks even
+      // when they have no general Tasks editing grant.
+      const oldData=existing.data||{};
+      const nextColumn=String(data.column||oldData.column||'todo');
+      data={...oldData,column:nextColumn};
+      if(nextColumn==='done'){
+        data.completedAt=String(req.body?.completedAt||kyivNow().date);
+        if(oldData.dailyReminder){
+          data.completedForDate=String(req.body?.completedForDate||kyivNow().date);
+          delete data.manualReminderStartedAt;
+        }
+      }else{
+        delete data.completedAt;
+        if(oldData.dailyReminder) delete data.completedForDate;
+      }
     }
 
     let notifyMsg = null;

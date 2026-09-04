@@ -4005,7 +4005,9 @@
   }
 
   function renderDailyTasks(tasks, matches){
-    const canManageTasks=!window.currentUser || window.currentUser.role==='admin';
+    const role=window.currentUser?.role||'admin';
+    const canManageTasks=role==='admin';
+    const canCompleteDaily=['admin','buyer','assistant'].includes(role);
     const wrap = document.getElementById('dailyTasksWrap');
     const dailyTasks = tasks.filter(t=>t.dailyReminder).filter(matches);
     const cards = dailyTasks.map(t=>{
@@ -4015,8 +4017,8 @@
         ${t.description ? `<div class="daily-task-card-desc">${escapeHtml(t.description)}</div>` : ''}
         <div class="task-meta"><span class="task-reminder-badge">⏰ ${escapeHtml(t.reminderTime||'10:00')} Киев</span><span class="task-countdown" data-reminder-countdown="${t.id}">${escapeHtml(reminderCountdown(t))}</span></div>
         <div class="daily-task-actions" style="margin-top:8px;">
+          ${canCompleteDaily ? `<button type="button" class="task-complete-btn daily-complete-btn" data-task-id="${t.id}" ${done?'disabled':''}>${done?'✓ Выполнено':'✓ Выполнить'}</button>` : ''}
           ${canManageTasks ? `
-          <button type="button" class="task-complete-btn daily-complete-btn" data-task-id="${t.id}" ${done?'disabled':''}>${done?'✓ Выполнено':'✓ Выполнить'}</button>
           <button type="button" class="task-reminder-toggle ${t.remindersEnabled === false ? '' : 'on'} daily-reminder-toggle" data-task-id="${t.id}">${t.remindersEnabled === false ? '🔕 Выкл.' : '🔔 Вкл.'}</button>
           <button type="button" class="timer-lever ${t.manualReminderStartedAt ? 'on' : ''} daily-timer-lever" data-task-id="${t.id}" ${t.manualReminderStartedAt ? 'disabled' : ''}><span class="lever-dot"></span>${t.manualReminderStartedAt ? 'Таймер запущен' : 'Запустить 5 мин'}</button>
           ` : ''}
@@ -4170,7 +4172,9 @@
   }
 
   function renderTasksView(){
-    const canManageTasks=!window.currentUser || window.currentUser.role==='admin';
+    const role=window.currentUser?.role||'admin';
+    const canManageTasks=role==='admin';
+    const canConfirmTasks=role==='admin'||role==='buyer';
     const tasks = tasksData();
     const wrap = document.getElementById('tasksBoardWrap');
     const search = (document.getElementById('taskSearchInput').value || '').trim().toLowerCase();
@@ -4196,7 +4200,7 @@
             <div class="task-move-row">
               <button type="button" class="task-move-btn move-left-btn" data-task-id="${t.id}" ${colIdx===0?'disabled':''} title="Назад">←</button>
               <button type="button" class="task-move-btn move-right-btn" data-task-id="${t.id}" ${colIdx>=TASK_COLUMNS.length-2?'disabled':''} title="Вперёд">→</button>
-              ${canManageTasks && col.key==='confirm' ? `<button type="button" class="task-complete-btn complete-task-btn" data-task-id="${t.id}">✓ Подтвердить</button>` : ''}
+              ${canConfirmTasks && col.key==='confirm' ? `<button type="button" class="task-complete-btn complete-task-btn" data-task-id="${t.id}">✓ Подтвердить</button>` : ''}
               ${canManageTasks && t.dailyReminder ? `<button type="button" class="task-reminder-toggle ${t.remindersEnabled === false ? '' : 'on'}" data-task-id="${t.id}" title="Включить или выключить напоминания">${t.remindersEnabled === false ? '🔕 Выкл.' : '🔔 Вкл.'}</button>` : ''}
               ${canManageTasks?`<button type="button" class="task-del-btn" data-task-id="${t.id}" title="Удалить">✕</button>`:''}
             </div>
