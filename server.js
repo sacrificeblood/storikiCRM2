@@ -164,7 +164,7 @@ function workspaceFor(req){ return req.canvasId || (req.user.role==='admin' ? 'm
 function canEditEntity(req, type, existing){
   if(req.user.role==='admin') return true;
   if(req.user.role==='assistant') return hasEditAccess(req.user,type) && (type!=='task' || !!existing);
-  return type!=='task' || !!existing;
+  return true;
 }
 function isDailyTaskCompletion(user, type, existing, nextData){
   return user.role==='assistant' && type==='task' && !!existing?.data?.dailyReminder && nextData?.column==='done';
@@ -391,14 +391,15 @@ app.get('/api/entities', async (req, res) => {
 app.post('/api/tasks/:id/start-reminder-timer', async (req, res) => {
   try{
     if(!['admin','buyer'].includes(req.user.role)) return res.status(403).json({error:'Запускать таймер может администратор или баер'});
-    const found = await pool.query(`SELECT data FROM entities WHERE id=$1 AND type='task' AND workspace_id='main'`, [req.params.id]);
+    const workspaceId=workspaceFor(req);
+    const found = await pool.query(`SELECT data FROM entities WHERE id=$1 AND type='task' AND workspace_id=$2`, [req.params.id,workspaceId]);
     if(!found.rows.length) return res.status(404).json({ error:'task not found' });
     const task = found.rows[0].data || {};
     if(!task.dailyReminder) return res.status(400).json({ error:'task is not daily' });
     const startedAt = new Date().toISOString();
     task.manualReminderStartedAt = startedAt;
     task.remindersEnabled = true;
-    await pool.query(`UPDATE entities SET data=$2, updated_at=now() WHERE id=$1`, [req.params.id, JSON.stringify(task)]);
+    await pool.query(`UPDATE entities SET data=$3, updated_at=now() WHERE id=$1 AND workspace_id=$2`, [req.params.id,workspaceId,JSON.stringify(task)]);
     res.json({ ok:true, startedAt });
   }catch(e){
     console.error('manual reminder timer failed', e);
@@ -420,22 +421,36 @@ app.put('/api/entities/:type/:id', async (req, res) => {
     const assistantDailyCompletion=isDailyTaskCompletion(req.user,type,existing,data);
     if(!canEditEntity(req,type,existing) && !assistantDailyCompletion) return res.status(403).json({error:'Недостаточно прав для изменения'});
     if(type==='task' && req.user.role!=='admin'){
-      if(!existing) return res.status(403).json({error:'Создавать задачи может только администратор'});
-      // Non-admins can move existing cards without changing their content. Buyers
-      // may confirm any task; assistants may additionally confirm daily tasks even
-      // when they have no general Tasks editing grant.
-      const oldData=existing.data||{};
-      const nextColumn=String(data.column||oldData.column||'todo');
-      data={...oldData,column:nextColumn};
-      if(nextColumn==='done'){
-        data.completedAt=String(req.body?.completedAt||kyivNow().date);
-        if(oldData.dailyReminder){
-          data.completedForDate=String(req.body?.completedForDate||kyivNow().date);
-          delete data.manualReminderStartedAt;
-        }
+      if(!existing){
+        if(req.user.role!=='buyer') return res.status(403).json({error:'Создавать задачи может администратор или баер'});
+        // Buyers create regular delegated tasks. Scheduled daily reminders remain
+        // an administrator-managed workflow.
+        data={
+          id:String(data.id||id),
+          title:String(data.title||'').trim(),
+          description:String(data.description||'').trim(),
+          column:'todo',
+          createdAt:Number.isFinite(data.createdAt)?data.createdAt:Date.now(),
+          dailyReminder:false,
+          remindersEnabled:false
+        };
       }else{
-        delete data.completedAt;
-        if(oldData.dailyReminder) delete data.completedForDate;
+        // Non-admins can move existing cards without changing their content. Buyers
+        // may confirm any task; assistants may additionally confirm daily tasks even
+        // when they have no general Tasks editing grant.
+        const oldData=existing.data||{};
+        const nextColumn=String(data.column||oldData.column||'todo');
+        data={...oldData,column:nextColumn};
+        if(nextColumn==='done'){
+          data.completedAt=String(req.body?.completedAt||kyivNow().date);
+          if(oldData.dailyReminder){
+            data.completedForDate=String(req.body?.completedForDate||kyivNow().date);
+            delete data.manualReminderStartedAt;
+          }
+        }else{
+          delete data.completedAt;
+          if(oldData.dailyReminder) delete data.completedForDate;
+        }
       }
     }
 

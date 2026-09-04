@@ -31,7 +31,7 @@
       return true;
     },
     async startTaskReminderTimer(id){
-      const res = await fetch('/api/tasks/' + encodeURIComponent(id) + '/start-reminder-timer', {
+      const res = await fetch('/api/tasks/' + encodeURIComponent(id) + '/start-reminder-timer' + workspace(), {
         method: 'POST', credentials: 'include'
       });
       if(!res.ok){
@@ -115,7 +115,7 @@
       if(user.role==='admin') document.getElementById('peopleBtn').style.display='inline-flex';
       if(user.role==='buyer') document.getElementById('activityBtn').style.display='inline-flex';
       if(user.role!=='admin'){ document.getElementById('trashBtn').style.display='none'; document.getElementById('backupsBtn').style.display='none'; document.getElementById('peopleBtn').style.display='none'; }
-      if(user.role!=='admin') document.getElementById('addTaskBtn').style.display='none';
+      if(user.role==='assistant') document.getElementById('addTaskBtn').style.display='none';
       document.getElementById('peopleBtn').addEventListener('click',()=>location.href='/people.html');
       document.getElementById('activityBtn').addEventListener('click',()=>location.href='/activity.html');
       document.getElementById('logoutBtn').addEventListener('click',async()=>{

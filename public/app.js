@@ -4034,6 +4034,7 @@
 
   function openTaskEditor(id, dailyPreset){
     const isEdit = !!id;
+    const canManageDaily=!window.currentUser||window.currentUser.role==='admin';
     const tasks = tasksData();
     const item = isEdit ? tasks.find(t=>t.id===id) : { id: uid(), title:'', description:'', column:'todo', createdAt: Date.now(), dailyReminder:!!dailyPreset, remindersEnabled:!!dailyPreset, reminderTime:'10:00' };
     if(isEdit && !item) return;
@@ -4069,7 +4070,7 @@
     timeInput.disabled = !reminderCheck.checked;
     reminderCheck.addEventListener('change', ()=>{ timeInput.disabled=!reminderCheck.checked; });
     reminderField.appendChild(timeInput);
-    modal.appendChild(reminderField);
+    if(canManageDaily) modal.appendChild(reminderField);
 
     const actions = document.createElement('div'); actions.className='modal-actions';
     if(isEdit){
@@ -4252,7 +4253,7 @@
       if(card && (!window.currentUser || window.currentUser.role==='admin')){ openTaskEditor(card.dataset.taskId); }
     }));
   }
-  document.getElementById('addTaskBtn').addEventListener('click', safe(()=>{ if(!window.currentUser || window.currentUser.role==='admin') openTaskEditor(null); }));
+  document.getElementById('addTaskBtn').addEventListener('click', safe(()=>{ if(!window.currentUser || ['admin','buyer'].includes(window.currentUser.role)) openTaskEditor(null); }));
   document.getElementById('taskSearchInput').addEventListener('input', ()=>{ if(currentView==='tasks') renderTasksView(); });
   document.getElementById('taskViewFilter').addEventListener('change', ()=>{ if(currentView==='tasks') renderTasksView(); });
   syncServerClock().catch(()=>{});
