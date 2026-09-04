@@ -1,5 +1,7 @@
 (function(){
-  const workspace=()=>window.activeWorkspace&&window.activeWorkspace!=='main'?`?canvas=${encodeURIComponent(window.activeWorkspace)}`:'';
+  // `main` is now a real shareable CRM canvas. It must be sent explicitly for
+  // buyers and assistants; omitting it falls back to their legacy empty workspace.
+  const workspace=()=>window.activeWorkspace?`?canvas=${encodeURIComponent(window.activeWorkspace)}`:'';
   // ---------- Entities API — one call per entity, never a shared document ----------
   window.entitiesApi = {
     async loadAll(){
@@ -103,7 +105,7 @@
       const explicitCanvas=localStorage.getItem(explicitKey);
       window.activeWorkspace=explicitCanvas&&available.some(x=>x.id===explicitCanvas)?explicitCanvas:(transferredMain?'main':(stored&&available.some(x=>x.id===stored)?stored:(user.role==='admin'?'main':(available[0]?.id||user.workspaceId))));
       localStorage.setItem('minon-active-canvas',window.activeWorkspace);
-      if(user.role==='admin' || available.length>1){
+      if(user.role==='admin'){
         const select=document.getElementById('workspaceSwitcher'); select.style.display='inline-block';
         select.innerHTML=available.map(x=>`<option value="${x.id}">${x.owner_name}: ${x.name}</option>`).join('');
         select.value=window.activeWorkspace;

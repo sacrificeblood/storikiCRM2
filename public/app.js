@@ -4434,14 +4434,6 @@
   // intact in case it's ever needed again.)
   document.getElementById('trashBtn').addEventListener('click', safe(openTrashManager));
   document.getElementById('backupsBtn').addEventListener('click', safe(()=>askBackupsPassword(openBackupsManager)));
-  document.getElementById('resetBtn').addEventListener('click', ()=>{
-    if(!confirm('Удалить ВСЕ данные (доска и реестр фанпейджей)? Это необратимо.')) return;
-    state = { layers: [], fanpages: [], creatives: [], links: [], fanpageRegistry: [], reports: {}, deletedItems: [], currentLayerId: null };
-    ensureAtLeastOneLayer();
-    saveState(true);
-    render();
-  });
-
   ['fSearch','fFan','fCre','fGeo'].forEach(id=>{
     document.getElementById(id).addEventListener('input', renderTable);
     document.getElementById(id).addEventListener('change', renderTable);

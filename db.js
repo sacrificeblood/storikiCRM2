@@ -82,11 +82,29 @@ async function initSchema(){
     FROM buyer, claimed
     WHERE crm_canvases.id='main'
   `);
+  // Retry the requested transfer for accounts whose display name contains a
+  // decorative prefix/suffix around "minon". The earlier exact-name migration
+  // intentionally did nothing for such accounts.
+  await pool.query(`
+    WITH buyer AS (
+      SELECT users.id FROM users
+      JOIN crm_canvases ON crm_canvases.id='main'
+      WHERE users.role='buyer' AND users.active=true AND lower(users.display_name) LIKE '%minon%'
+      ORDER BY users.created_at LIMIT 1
+    ), claimed AS (
+      INSERT INTO app_migrations (key)
+      SELECT 'transfer-main-canvas-to-minon-v2' FROM buyer
+      ON CONFLICT DO NOTHING RETURNING key
+    )
+    UPDATE crm_canvases SET owner_id=buyer.id
+    FROM buyer, claimed
+    WHERE crm_canvases.id='main'
+  `);
   await pool.query(`
     WITH buyer AS (
       SELECT users.id FROM users
       JOIN crm_canvases ON crm_canvases.id='main' AND crm_canvases.owner_id=users.id
-      WHERE users.role='buyer' AND users.active=true AND lower(users.display_name)=lower('minon')
+      WHERE users.role='buyer' AND users.active=true AND lower(users.display_name) LIKE '%minon%'
       LIMIT 1
     )
     INSERT INTO canvas_access (canvas_id,user_id)
