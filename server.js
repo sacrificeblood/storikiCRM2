@@ -109,11 +109,17 @@ async function deliverDueNoteReminders(){
     const note=row.data||{},reminderAt=String(note.reminderAt||'');
     if(!note.reminderEnabled || !/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/.test(reminderAt)) continue;
     if(reminderAt>nowKey || note.reminderSentFor===reminderAt) continue;
-    const eventKey=`note-reminder:${reminderAt}`;
+    const recipientId=String(note.reminderRecipientId||'');
+    let mention='';
+    if(recipientId){
+      const recipient=await pool.query('SELECT telegram_username FROM users WHERE id=$1 AND active=true',[recipientId]);
+      mention=telegramMention(recipient.rows[0]?.telegram_username);
+    }
+    const eventKey=`note-reminder:${reminderAt}:${recipientId||'none'}`;
     const sent=await sendTaskTelegramOnce(
       row.id,
       eventKey,
-      `⏰ <b>Напоминание из заметок</b>\n<b>${escapeHtmlTg(note.title||'Без названия')}</b>`+
+      `⏰ <b>Напоминание из заметок</b>${mention?` · ${mention}`:''}\n<b>${escapeHtmlTg(note.title||'Без названия')}</b>`+
         (note.text?`\n${escapeHtmlTg(note.text)}`:'')
     );
     const delivered=sent || !!(await pool.query('SELECT 1 FROM task_notification_log WHERE task_id=$1 AND event_key=$2',[row.id,eventKey])).rowCount;
@@ -173,14 +179,40 @@ const FEATURE_TYPES={
   reports:['spendRevDay','launchPlan'], accs:['accagent','accsoc','acc'], creatives:['creogeo','creocreative'], campaigns:['campgeo','campcampaign','geocipher']
 };
 function featureForType(type){ return Object.keys(FEATURE_TYPES).find(key=>FEATURE_TYPES[key].includes(type)); }
-function publicUser(row){ return { id:row.id, email:row.email, name:row.display_name, role:row.role, workspaceId:row.workspace_id, permissions:row.permissions||{}, graphX:row.graph_x, graphY:row.graph_y }; }
+function normalizeTelegramUsername(value){
+  const username=String(value||'').trim().replace(/^@+/, '');
+  return username && /^[A-Za-z0-9_]{5,32}$/.test(username) ? username : '';
+}
+function telegramMention(username){
+  const normalized=normalizeTelegramUsername(username);
+  return normalized ? `@${normalized}` : '';
+}
+async function buyerMentionForCanvas(canvasId){
+  const result=await pool.query(
+    `SELECT u.telegram_username FROM crm_canvases c JOIN users u ON u.id=c.owner_id WHERE c.id=$1 AND u.active=true`,
+    [canvasId]
+  );
+  return telegramMention(result.rows[0]?.telegram_username);
+}
+async function isTelegramRecipientForCanvas(canvasId,userId){
+  if(!userId) return true;
+  const result=await pool.query(
+    `SELECT 1 FROM users u WHERE u.id=$2 AND u.active=true AND u.telegram_username IS NOT NULL AND u.telegram_username<>'' AND (
+      u.role='admin' OR u.id=(SELECT owner_id FROM crm_canvases WHERE id=$1)
+      OR EXISTS(SELECT 1 FROM canvas_access a WHERE a.canvas_id=$1 AND a.user_id=u.id)
+    )`,
+    [canvasId,userId]
+  );
+  return !!result.rowCount;
+}
+function publicUser(row){ return { id:row.id, email:row.email, name:row.display_name, role:row.role, workspaceId:row.workspace_id, permissions:row.permissions||{}, graphX:row.graph_x, graphY:row.graph_y, telegramUsername:row.telegram_username||'' }; }
 function hasEditAccess(user,type){ return user.role!=='assistant' || !!user.permissions?.[featureForType(type)]; }
 async function requireAuth(req,res,next){
   try{
     const token=readCookie(req,SESSION_COOKIE);
     if(!token) return unauthenticated(req,res,'Требуется вход');
     const result=await pool.query(
-      `SELECT u.id,u.email,u.display_name,u.role,u.workspace_id,u.permissions,u.graph_x,u.graph_y FROM user_sessions s
+      `SELECT u.id,u.email,u.display_name,u.role,u.workspace_id,u.permissions,u.graph_x,u.graph_y,u.telegram_username FROM user_sessions s
        JOIN users u ON u.id=s.user_id
        WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active=true`, [hashToken(token)]
     );
@@ -274,7 +306,7 @@ app.get('/api/canvases', async (req,res)=>{
 });
 app.get('/api/canvas-graph', requireRole('admin'), async (req,res)=>{
   const [users,canvases,access]=await Promise.all([
-    pool.query(`SELECT id,email,display_name,role,workspace_id,permissions,active,graph_x,graph_y FROM users ORDER BY created_at`),
+    pool.query(`SELECT id,email,display_name,role,workspace_id,permissions,active,graph_x,graph_y,telegram_username FROM users ORDER BY created_at`),
     pool.query(`SELECT c.*,u.display_name AS owner_name FROM crm_canvases c JOIN users u ON u.id=c.owner_id ORDER BY c.created_at`),
     pool.query(`SELECT canvas_id,user_id FROM canvas_access`)
   ]);
@@ -331,8 +363,8 @@ app.delete('/api/canvases/:id', async (req,res)=>{
 app.get('/api/users', requireRole('admin'), async (req,res)=>{
   try{
     const result=req.user.role==='admin'
-      ? await pool.query('SELECT id,email,display_name,role,workspace_id,permissions,active,graph_x,graph_y,created_at FROM users ORDER BY created_at')
-      : await pool.query(`SELECT id,email,display_name,role,workspace_id,permissions,active,graph_x,graph_y,created_at FROM users WHERE workspace_id=$1 ORDER BY created_at`,[req.user.workspaceId]);
+      ? await pool.query('SELECT id,email,display_name,role,workspace_id,permissions,active,graph_x,graph_y,telegram_username,created_at FROM users ORDER BY created_at')
+      : await pool.query(`SELECT id,email,display_name,role,workspace_id,permissions,active,graph_x,graph_y,telegram_username,created_at FROM users WHERE workspace_id=$1 ORDER BY created_at`,[req.user.workspaceId]);
     res.json({users:result.rows.map(publicUser).map((user,index)=>({...user,active:result.rows[index].active}))});
   }catch(e){ res.status(500).json({error:'Не удалось загрузить пользователей'}); }
 });
@@ -343,6 +375,8 @@ app.post('/api/users', requireRole('admin'), async (req,res)=>{
     const displayName=String(req.body?.name||'').trim();
     const password=String(req.body?.password||'');
     const requestedRole=String(req.body?.role||'assistant');
+    const telegramUsername=normalizeTelegramUsername(req.body?.telegramUsername);
+    if(req.body?.telegramUsername && !telegramUsername) return res.status(400).json({error:'Telegram-ник: 5–32 символа, только латиница, цифры и _'});
     if(!/^\S+@\S+\.\S+$/.test(email) || !displayName || password.length<8) return res.status(400).json({error:'Укажите имя, корректный email и пароль от 8 символов'});
     if(!['buyer','assistant'].includes(requestedRole)) return res.status(400).json({error:'Недопустимая роль'});
     const id=uid();
@@ -353,8 +387,8 @@ app.post('/api/users', requireRole('admin'), async (req,res)=>{
     }
     const permissions=requestedRole==='assistant' && req.body?.permissions && typeof req.body.permissions==='object' ? req.body.permissions : {};
     await pool.query(
-      'INSERT INTO users (id,email,display_name,role,workspace_id,permissions,password_hash) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [id,email,displayName,requestedRole,workspaceId,JSON.stringify(permissions),hashPassword(password)]
+      'INSERT INTO users (id,email,display_name,role,workspace_id,permissions,password_hash,telegram_username) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [id,email,displayName,requestedRole,workspaceId,JSON.stringify(permissions),hashPassword(password),telegramUsername||null]
     );
     if(requestedRole==='buyer') await pool.query(`INSERT INTO crm_canvases (id,owner_id,name) VALUES ($1,$1,'Основная CRM') ON CONFLICT DO NOTHING`,[id]);
     res.status(201).json({user:{id,email,name:displayName,role:requestedRole,workspaceId}});
@@ -383,9 +417,33 @@ app.patch('/api/users/:id', requireRole('admin','buyer'), async (req,res)=>{
     }
     const graphX=Number.isFinite(req.body?.x)?Math.round(req.body.x):null, graphY=Number.isFinite(req.body?.y)?Math.round(req.body.y):null;
     const active=typeof req.body?.active==='boolean'?req.body.active:null;
-    await pool.query('UPDATE users SET active=COALESCE($2,active), permissions=COALESCE($3,permissions), workspace_id=COALESCE($4,workspace_id),graph_x=COALESCE($5,graph_x),graph_y=COALESCE($6,graph_y) WHERE id=$1',[row.id,active,permissions?JSON.stringify(permissions):null,workspaceId,graphX,graphY]);
+    const hasTelegram=Object.prototype.hasOwnProperty.call(req.body||{},'telegramUsername');
+    const telegramUsername=hasTelegram?normalizeTelegramUsername(req.body.telegramUsername):null;
+    if(hasTelegram && req.body.telegramUsername && !telegramUsername) return res.status(400).json({error:'Telegram-ник: 5–32 символа, только латиница, цифры и _'});
+    await pool.query('UPDATE users SET active=COALESCE($2,active), permissions=COALESCE($3,permissions), workspace_id=COALESCE($4,workspace_id),graph_x=COALESCE($5,graph_x),graph_y=COALESCE($6,graph_y),telegram_username=CASE WHEN $7::boolean THEN $8 ELSE telegram_username END WHERE id=$1',[row.id,active,permissions?JSON.stringify(permissions):null,workspaceId,graphX,graphY,hasTelegram,telegramUsername||null]);
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:'Не удалось обновить пользователя'}); }
+});
+
+app.get('/api/telegram-recipients', async (req,res)=>{
+  try{
+    const canvasId=workspaceFor(req);
+    const result=await pool.query(
+      `SELECT DISTINCT u.id,u.display_name,u.role,u.telegram_username
+       FROM users u
+       WHERE u.active=true AND u.telegram_username IS NOT NULL AND u.telegram_username<>'' AND (
+         u.role='admin'
+         OR u.id=(SELECT owner_id FROM crm_canvases WHERE id=$1)
+         OR EXISTS(SELECT 1 FROM canvas_access a WHERE a.canvas_id=$1 AND a.user_id=u.id)
+       )
+       ORDER BY CASE u.role WHEN 'admin' THEN 0 WHEN 'buyer' THEN 1 ELSE 2 END,u.display_name`,
+      [canvasId]
+    );
+    res.json({recipients:result.rows.map(row=>({id:row.id,name:row.display_name,role:row.role,telegramUsername:row.telegram_username}))});
+  }catch(e){
+    console.error('telegram recipients failed',e);
+    res.status(500).json({error:'Не удалось загрузить получателей Telegram'});
+  }
 });
 
 const ACTIVITY_LOG_LIMIT = 300;
@@ -456,6 +514,9 @@ app.put('/api/entities/:type/:id', async (req, res) => {
     if(existing && existing.workspace_id!==workspaceId) return res.status(403).json({error:'Нет доступа к этому пространству'});
     const assistantDailyCompletion=isDailyTaskCompletion(req.user,type,existing,data);
     if(!canEditEntity(req,type,existing) && !assistantDailyCompletion) return res.status(403).json({error:'Недостаточно прав для изменения'});
+    if(type==='note' && data.reminderRecipientId && !await isTelegramRecipientForCanvas(workspaceId,String(data.reminderRecipientId))){
+      return res.status(400).json({error:'Этот получатель Telegram не связан с текущим CRM-полотном'});
+    }
     if(type==='task' && req.user.role!=='admin'){
       if(!existing){
         if(req.user.role!=='buyer') return res.status(403).json({error:'Создавать задачи может администратор или баер'});
@@ -504,7 +565,13 @@ app.put('/api/entities/:type/:id', async (req, res) => {
           const fromLabel = TASK_COLUMN_LABELS[oldData.column] || oldData.column || '—';
           const toLabel = TASK_COLUMN_LABELS[data.column] || data.column || '—';
           notifyEventKey = `column:${oldData.column || ''}:${data.column || ''}`;
-          notifyMsg = `↪️ <b>${escapeHtmlTg(data.title || '(без названия)')}</b>: ${fromLabel} → ${toLabel}`;
+          if(data.column==='confirm'){
+            const mention=await buyerMentionForCanvas(workspaceId);
+            notifyMsg = `🧾 <b>Нужно подтвердить задачу</b>${mention?` · ${mention}`:''}\n<b>${escapeHtmlTg(data.title || '(без названия)')}</b>`+
+              (data.description?`\n${escapeHtmlTg(data.description)}`:'');
+          }else{
+            notifyMsg = `↪️ <b>${escapeHtmlTg(data.title || '(без названия)')}</b>: ${fromLabel} → ${toLabel}`;
+          }
         }
       }
     }

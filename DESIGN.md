@@ -100,6 +100,8 @@ The uniquifier is a private production bench: source controls stay in one compac
 
 The Notes tab is a spatial working surface, not a task column: cards are quiet oxblood paper slips, their red edge names the active object, and thin warm-gradient curves show relationships. The curves automatically select the nearest clean edge on each card, so the canvas stays legible as notes move. A compact amber clock badge marks a scheduled Telegram reminder and turns neutral after delivery. Pan and zoom are direct-manipulation controls; creation is available through the primary action and a right-click on open canvas.
 
+Telegram recipients use the same compact native selector as the rest of the product. A recipient is shown as a CRM display name plus `@username`; the account relationship map is the single place where administrators maintain that username.
+
 ### Forms and overlays
 
 Fields are dark and inset with a visible red focus halo. Dialogs are raised oxblood surfaces. Toasts report actions in a single stable location.

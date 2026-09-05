@@ -238,8 +238,14 @@
     if(!notes.length){ const empty=document.createElement('div'); empty.className='notes-empty'; empty.textContent='Здесь появятся твои мысли. Нажми «Новая заметка» или кликни правой кнопкой по доске.'; notesCanvas.appendChild(empty); }
     drawNoteLinks(); applyNotesTransform();
   }
-  function openNotesEditor(noteId, position){
+  async function openNotesEditor(noteId, position){
     const existing = noteId ? (state.notes||[]).find(n=>n.id===noteId) : null;
+    let telegramRecipients=[];
+    try{
+      const suffix=window.activeWorkspace?`?canvas=${encodeURIComponent(window.activeWorkspace)}`:'';
+      const response=await fetch('/api/telegram-recipients'+suffix,{credentials:'include'});
+      if(response.ok) telegramRecipients=(await response.json()).recipients||[];
+    }catch(e){ /* Reminder still works without an explicit tag. */ }
     const overlay=document.createElement('div'); overlay.className='overlay';
     const modal=document.createElement('div'); modal.className='modal'; modal.innerHTML=`<h3>${existing?'Изменить заметку':'Новая заметка'}</h3>`;
     const titleField=document.createElement('div'); titleField.className='field'; titleField.innerHTML='<label>Заголовок</label>';
@@ -257,8 +263,13 @@
     const reminderDate=document.createElement('input'); reminderDate.type='date'; reminderDate.value=reminderAt.slice(0,10); reminderDate.setAttribute('aria-label','Дата напоминания');
     const reminderTime=document.createElement('input'); reminderTime.type='time'; reminderTime.value=reminderAt.slice(11,16); reminderTime.setAttribute('aria-label','Время напоминания по Киеву');
     reminderRow.append(reminderDate,reminderTime); reminderField.appendChild(reminderRow);
+    const recipientLabel=document.createElement('label'); recipientLabel.textContent='Кого тегнуть'; recipientLabel.className='note-reminder-recipient-label';
+    const reminderRecipient=document.createElement('select'); reminderRecipient.setAttribute('aria-label','Получатель Telegram-напоминания');
+    reminderRecipient.innerHTML='<option value="">Без тега</option>'+telegramRecipients.map(person=>`<option value="${escapeHtml(person.id)}">${escapeHtml(person.name)} · @${escapeHtml(person.telegramUsername)}</option>`).join('');
+    reminderRecipient.value=existing?.reminderRecipientId||'';
+    recipientLabel.appendChild(reminderRecipient); reminderField.appendChild(recipientLabel);
     const reminderHelp=document.createElement('div'); reminderHelp.className='note-reminder-help'; reminderHelp.textContent='Время Киева. Бот отправит заголовок и текст заметки один раз.'; reminderField.appendChild(reminderHelp);
-    const syncReminderInputs=()=>{reminderDate.disabled=!reminderCheck.checked;reminderTime.disabled=!reminderCheck.checked;}; reminderCheck.addEventListener('change',syncReminderInputs); syncReminderInputs();
+    const syncReminderInputs=()=>{reminderDate.disabled=!reminderCheck.checked;reminderTime.disabled=!reminderCheck.checked;reminderRecipient.disabled=!reminderCheck.checked;}; reminderCheck.addEventListener('change',syncReminderInputs); syncReminderInputs();
     modal.appendChild(reminderField);
     const actions=document.createElement('div'); actions.className='modal-actions';
     if(existing){ const remove=document.createElement('button'); remove.className='btn btn-danger'; remove.type='button'; remove.textContent='Удалить'; remove.addEventListener('click',()=>{ state.notes=state.notes.filter(n=>n.id!==existing.id); state.noteLinks=state.noteLinks.filter(l=>l.fromId!==existing.id&&l.toId!==existing.id); saveState(true); render(); document.body.removeChild(overlay); showToast('Заметка удалена'); }); actions.appendChild(remove); }
@@ -270,10 +281,10 @@
       const nextReminderAt=reminderCheck.checked?`${reminderDate.value}T${reminderTime.value}`:'';
       if(existing){
         existing.title=title.value.trim(); existing.text=text.value.trim(); existing.reminderEnabled=reminderCheck.checked;
-        if(reminderCheck.checked){if(existing.reminderAt!==nextReminderAt){delete existing.reminderSentFor;delete existing.reminderSentAt;}existing.reminderAt=nextReminderAt;}
-        else {delete existing.reminderAt;delete existing.reminderSentFor;delete existing.reminderSentAt;}
+        if(reminderCheck.checked){if(existing.reminderAt!==nextReminderAt||existing.reminderRecipientId!==reminderRecipient.value){delete existing.reminderSentFor;delete existing.reminderSentAt;}existing.reminderAt=nextReminderAt;existing.reminderRecipientId=reminderRecipient.value;}
+        else {delete existing.reminderAt;delete existing.reminderRecipientId;delete existing.reminderSentFor;delete existing.reminderSentAt;}
       }
-      else { const p=position||{x:160,y:120}; state.notes.push({id:uid(),title:title.value.trim(),text:text.value.trim(),x:Math.max(0,Math.round(p.x-120)),y:Math.max(0,Math.round(p.y-58)),createdAt:Date.now(),reminderEnabled:reminderCheck.checked,...(reminderCheck.checked?{reminderAt:nextReminderAt}:{})}); }
+      else { const p=position||{x:160,y:120}; state.notes.push({id:uid(),title:title.value.trim(),text:text.value.trim(),x:Math.max(0,Math.round(p.x-120)),y:Math.max(0,Math.round(p.y-58)),createdAt:Date.now(),reminderEnabled:reminderCheck.checked,...(reminderCheck.checked?{reminderAt:nextReminderAt,reminderRecipientId:reminderRecipient.value}:{})}); }
       saveState(true); render(); document.body.removeChild(overlay);
     }); actions.appendChild(save); modal.appendChild(actions); overlay.appendChild(modal); document.body.appendChild(overlay);
     overlay.addEventListener('click',e=>{if(e.target===overlay)document.body.removeChild(overlay)}); title.focus();

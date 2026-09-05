@@ -57,6 +57,7 @@ async function initSchema(){
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS graph_x INTEGER;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS graph_y INTEGER;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_username TEXT;`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_workspace ON users (workspace_id);`);
   await pool.query(`CREATE TABLE IF NOT EXISTS crm_canvases (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now());`);
   await pool.query(`ALTER TABLE crm_canvases ADD COLUMN IF NOT EXISTS graph_x INTEGER;`);
