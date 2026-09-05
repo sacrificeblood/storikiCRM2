@@ -265,7 +265,7 @@
     reminderRow.append(reminderDate,reminderTime); reminderField.appendChild(reminderRow);
     const recipientLabel=document.createElement('label'); recipientLabel.textContent='Кого тегнуть'; recipientLabel.className='note-reminder-recipient-label';
     const reminderRecipient=document.createElement('select'); reminderRecipient.setAttribute('aria-label','Получатель Telegram-напоминания');
-    reminderRecipient.innerHTML='<option value="">Без тега</option>'+telegramRecipients.map(person=>`<option value="${escapeHtml(person.id)}">${escapeHtml(person.name)} · @${escapeHtml(person.telegramUsername)}</option>`).join('');
+    reminderRecipient.innerHTML='<option value="">Без тега</option>'+telegramRecipients.map(person=>`<option value="${escapeHtml(person.id)}">${escapeHtml(person.name)} · ${person.role==='buyer'?'баер':person.role==='assistant'?'ассист':'админ'} · @${escapeHtml(person.telegramUsername)}</option>`).join('');
     reminderRecipient.value=existing?.reminderRecipientId||'';
     recipientLabel.appendChild(reminderRecipient); reminderField.appendChild(recipientLabel);
     const reminderHelp=document.createElement('div'); reminderHelp.className='note-reminder-help'; reminderHelp.textContent='Время Киева. Бот отправит заголовок и текст заметки один раз.'; reminderField.appendChild(reminderHelp);

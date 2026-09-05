@@ -199,6 +199,7 @@ async function isTelegramRecipientForCanvas(canvasId,userId){
   const result=await pool.query(
     `SELECT 1 FROM users u WHERE u.id=$2 AND u.active=true AND u.telegram_username IS NOT NULL AND u.telegram_username<>'' AND (
       u.role='admin' OR u.id=(SELECT owner_id FROM crm_canvases WHERE id=$1)
+      OR u.workspace_id=(SELECT owner_id FROM crm_canvases WHERE id=$1)
       OR EXISTS(SELECT 1 FROM canvas_access a WHERE a.canvas_id=$1 AND a.user_id=u.id)
     )`,
     [canvasId,userId]
@@ -434,6 +435,7 @@ app.get('/api/telegram-recipients', async (req,res)=>{
        WHERE u.active=true AND u.telegram_username IS NOT NULL AND u.telegram_username<>'' AND (
          u.role='admin'
          OR u.id=(SELECT owner_id FROM crm_canvases WHERE id=$1)
+         OR u.workspace_id=(SELECT owner_id FROM crm_canvases WHERE id=$1)
          OR EXISTS(SELECT 1 FROM canvas_access a WHERE a.canvas_id=$1 AND a.user_id=u.id)
        )
        ORDER BY CASE u.role WHEN 'admin' THEN 0 WHEN 'buyer' THEN 1 ELSE 2 END,u.display_name`,
@@ -766,9 +768,11 @@ app.get('/login.html', (req,res)=>res.sendFile(path.join(__dirname,'public','log
 // necessarily receives the client UI after login; the database, roles and rules live
 // on the server and cannot be extracted from that UI.
 app.use(requireAuth);
-app.get('/people.html', (req,res,next)=>req.user.role==='admin'
-  ? res.sendFile(path.join(__dirname,'public','people.html'))
-  : res.redirect('/'));
+app.get('/people.html', (req,res,next)=>{
+  if(req.user.role!=='admin') return res.redirect('/');
+  res.setHeader('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.sendFile(path.join(__dirname,'public','people.html'));
+});
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('index.html') || filePath.endsWith('app.js') || filePath.endsWith('storage-shim.js')) {
