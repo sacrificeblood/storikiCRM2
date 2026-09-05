@@ -100,7 +100,7 @@
 
   main{flex:1; position:relative; overflow:hidden; display:flex; flex-direction:column;}
   #report-view, #board-outer, #table-view, #fanpage-view,
-  #accsView, #creoView, #campaignView, #geoCipherView, #dashboardView, #tasksView{
+  #accsView, #creoView, #campaignView, #geoCipherView, #dashboardView, #tasksView, #uniqueView{
     animation:viewFadeIn .28s ease-out;
   }
   @keyframes viewFadeIn{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
@@ -711,6 +711,18 @@
     .notes-topbar{padding:10px 12px;flex-wrap:wrap;}.notes-topbar .notes-hint{margin-left:0;}.notes-topbar .zoom-controls{margin-left:auto;}
     .modal{padding:18px!important;max-height:92dvh!important;}.modal-actions{flex-wrap:wrap;}.modal-actions .spacer{display:none;}.modal-actions .btn{flex:1;}
   }
+  #uniqueView{overflow:auto;min-height:0;flex:1;}.unique-shell{max-width:1180px;margin:0 auto;padding:28px;display:grid;grid-template-columns:minmax(280px,390px) 1fr;gap:18px;}
+  .unique-panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:18px;box-shadow:0 18px 45px rgba(0,0,0,.18);}
+  .unique-panel h2{margin:0 0 6px;font-size:22px;}.unique-panel p{margin:0;color:var(--text-dim);line-height:1.5;}
+  .unique-drop{margin-top:18px;min-height:220px;border:1px dashed rgba(237,41,75,.55);border-radius:14px;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;cursor:pointer;background:linear-gradient(145deg,rgba(237,41,75,.08),rgba(0,0,0,.08));transition:border-color .16s ease,background .16s ease,transform .16s ease;overflow:hidden;}
+  .unique-drop:hover,.unique-drop.dragover{border-color:var(--primary);background:rgba(237,41,75,.12);transform:translateY(-1px);}.unique-drop:focus-within{outline:2px solid var(--primary);outline-offset:3px;}
+  .unique-drop img{display:none;max-width:100%;max-height:280px;border-radius:10px;object-fit:contain;}.unique-drop.has-file img{display:block;}.unique-drop.has-file .unique-drop-copy{display:none;}
+  .unique-drop-mark{display:block;font-size:34px;margin-bottom:8px}.unique-drop strong{display:block;font-size:15px}.unique-drop small{display:block;margin-top:6px;color:var(--text-dim)}
+  .unique-controls{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;margin-top:14px}.unique-controls .field{margin:0}.unique-controls input{width:100%;}
+  .unique-progress{margin-top:14px;border-top:1px solid var(--border);padding-top:14px}.unique-progress-track{height:9px;border-radius:999px;background:#09070a;border:1px solid var(--border);overflow:hidden}.unique-progress-bar{width:0;height:100%;background:linear-gradient(90deg,var(--primary-deep),var(--primary),#ff6b82);transition:width .18s ease}.unique-progress-meta{display:flex;justify-content:space-between;gap:12px;margin-top:7px;color:var(--text-dim);font-size:12px;font-variant-numeric:tabular-nums}
+  .unique-results-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.unique-results{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}.unique-result{background:var(--panel-2);border:1px solid var(--border);border-radius:12px;padding:10px}.unique-result img{width:100%;aspect-ratio:4/3;object-fit:contain;background:#09070a;border-radius:8px}.unique-result-name{font-size:12px;margin:8px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-dim)}.unique-empty{min-height:280px;display:grid;place-items:center;text-align:center;color:var(--text-dim);border:1px dashed var(--border);border-radius:14px;padding:24px}
+  @media(max-width:820px){.unique-shell{grid-template-columns:1fr;padding:14px 12px 28px}.unique-drop{min-height:180px}.unique-results{grid-template-columns:repeat(2,minmax(0,1fr));}}
+  @media(max-width:440px){.unique-controls{grid-template-columns:1fr}.unique-controls .btn{width:100%}.unique-results{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -722,6 +734,7 @@
       <button class="tab-btn" data-view="tasks" id="tabTasksBtn">Задачи</button>
       <button class="tab-btn" data-view="dashboard" id="tabDashboardBtn">Dashboard</button>
       <button class="tab-btn" data-view="notes" id="tabNotesBtn">Заметки</button>
+      <button class="tab-btn" data-view="unique" id="tabUniqueBtn">Уникализатор</button>
     </div>
     <div class="toolbar">
       <select id="workspaceSwitcher" style="display:none;max-width:180px;"></select>
@@ -993,6 +1006,32 @@
         <div id="launchPlanTableWrap"></div>
       </div>
     </div>
+
+    <div id="uniqueView" style="display:none;">
+      <div class="unique-shell">
+        <section class="unique-panel" aria-labelledby="uniqueTitle">
+          <h2 id="uniqueTitle">Уникализатор изображений</h2>
+          <p>Создаёт визуально одинаковые, но технически разные версии. Обработка идёт только на этом устройстве.</p>
+          <label class="unique-drop" id="uniqueDrop" for="uniqueFileInput" tabindex="0" role="button" aria-label="Выбрать изображение для уникализации">
+            <input id="uniqueFileInput" type="file" accept="image/*,.heic,.heif" hidden>
+            <span class="unique-drop-copy"><span class="unique-drop-mark">◈</span><strong>Перетащи изображение или нажми сюда</strong><small>JPEG, PNG, WebP и другие форматы, которые открывает браузер</small></span>
+            <img id="uniquePreview" alt="Предпросмотр выбранного изображения">
+          </label>
+          <div class="unique-controls">
+            <div class="field"><label for="uniqueCount">Количество версий</label><input id="uniqueCount" type="number" min="1" max="30" value="5" inputmode="numeric"></div>
+            <button class="btn btn-fan" id="uniqueStartBtn" type="button">Уникализировать</button>
+          </div>
+          <div class="unique-progress" id="uniqueProgress" hidden>
+            <div class="unique-progress-track" role="progressbar" id="uniqueProgressTrack" aria-label="Прогресс уникализации" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="unique-progress-bar" id="uniqueProgressBar"></div></div>
+            <div class="unique-progress-meta"><span id="uniqueProgressStatus" role="status" aria-live="polite">Подготовка…</span><span id="uniqueProgressPercent">0%</span></div>
+          </div>
+        </section>
+        <section class="unique-panel" aria-labelledby="uniqueResultsTitle">
+          <div class="unique-results-head"><div><h2 id="uniqueResultsTitle">Готовые версии</h2><p id="uniqueResultsNote">Здесь появятся результаты</p></div><button class="btn btn-ghost" id="uniqueDownloadAllBtn" type="button" hidden>Скачать все</button></div>
+          <div class="unique-results" id="uniqueResults"><div class="unique-empty">Выбери изображение и количество вариантов</div></div>
+        </section>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -1003,7 +1042,7 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=19"></script>
-<script src="storage-shim.js?v=19"></script>
+<script src="app.js?v=20"></script>
+<script src="storage-shim.js?v=20"></script>
 </body>
 </html>

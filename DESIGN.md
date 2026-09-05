@@ -92,6 +92,10 @@ Active navigation is a red cut line. Tables use compact rows and warm hairlines;
 
 The launch plan lives as a peer tab to Tasks, using a date strip and expandable creative-name groups. Creative naming is the blue high-contrast badge and primary scan target; GEO stays as neutral row context, while quantity, setup, and budget remain quiet supporting data.
 
+### Image uniquifier
+
+The uniquifier is a private production bench: source controls stay in one compact panel while generated variants form a calm result grid. The red progress cut is the only active accent. Preview and result media sit on the darkest surface so color judgment is not distorted by the interface.
+
 ### Notes board
 
 The Notes tab is a spatial working surface, not a task column: cards are quiet oxblood paper slips, their red edge names the active object, and thin warm-gradient curves show relationships. The curves automatically select the nearest clean edge on each card, so the canvas stays legible as notes move. Pan and zoom are direct-manipulation controls; creation is available through the primary action and a right-click on open canvas.

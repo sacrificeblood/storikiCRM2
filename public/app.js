@@ -619,6 +619,9 @@
     }else if(currentView === 'notes'){
       setActiveTab('tabNotesBtn');
       notesOuter.style.display='flex';
+    }else if(currentView === 'unique'){
+      setActiveTab('tabUniqueBtn');
+      document.getElementById('uniqueView').style.display='block';
     }else{
       // 'dashboard', or any old/unknown saved value — Dashboard is the safe default landing view
       currentView = 'dashboard';
@@ -4345,6 +4348,134 @@
     tableWrap.innerHTML = html;
   }
 
+  // ---------- IMAGE UNIQUIFIER (local-only processing) ----------
+  const uniqueUi={
+    file:null,previewUrl:'',results:[],running:false,
+    drop:document.getElementById('uniqueDrop'),input:document.getElementById('uniqueFileInput'),
+    preview:document.getElementById('uniquePreview'),count:document.getElementById('uniqueCount'),
+    start:document.getElementById('uniqueStartBtn'),progress:document.getElementById('uniqueProgress'),
+    track:document.getElementById('uniqueProgressTrack'),bar:document.getElementById('uniqueProgressBar'),
+    status:document.getElementById('uniqueProgressStatus'),percent:document.getElementById('uniqueProgressPercent'),
+    resultsWrap:document.getElementById('uniqueResults'),resultsNote:document.getElementById('uniqueResultsNote'),
+    downloadAll:document.getElementById('uniqueDownloadAllBtn')
+  };
+  function clearUniqueResults(){
+    uniqueUi.results.forEach(item=>URL.revokeObjectURL(item.url));
+    uniqueUi.results=[];
+    uniqueUi.resultsWrap.innerHTML='<div class="unique-empty">Выбери изображение и количество вариантов</div>';
+    uniqueUi.resultsNote.textContent='Здесь появятся результаты';
+    uniqueUi.downloadAll.hidden=true;
+  }
+  function setUniqueProgress(done,total,label){
+    const value=total?Math.round(done/total*100):0;
+    uniqueUi.progress.hidden=false;
+    uniqueUi.track.setAttribute('aria-valuenow',String(value));
+    uniqueUi.bar.style.width=value+'%';
+    uniqueUi.percent.textContent=value+'%';
+    uniqueUi.status.textContent=label||`Готово ${done} из ${total}`;
+  }
+  function loadUniqueFile(file){
+    if(!file) return;
+    if(!file.type.startsWith('image/') && !/\.(heic|heif)$/i.test(file.name||'')){
+      showErrorBanner('Выбери файл изображения'); return;
+    }
+    if(uniqueUi.previewUrl) URL.revokeObjectURL(uniqueUi.previewUrl);
+    uniqueUi.file=file;
+    uniqueUi.previewUrl=URL.createObjectURL(file);
+    uniqueUi.preview.src=uniqueUi.previewUrl;
+    uniqueUi.drop.classList.add('has-file');
+    clearUniqueResults();
+    uniqueUi.progress.hidden=true;
+    uniqueUi.resultsNote.textContent=`${file.name} · ${(file.size/1024/1024).toFixed(2)} МБ`;
+  }
+  async function decodeUniqueImage(file){
+    if('createImageBitmap' in window){
+      try{return await createImageBitmap(file,{imageOrientation:'from-image'});}catch(error){/* use the image-element fallback below */}
+    }
+    return new Promise((resolve,reject)=>{
+      const url=URL.createObjectURL(file),img=new Image();
+      img.onload=()=>{URL.revokeObjectURL(url);resolve(img);};
+      img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Этот формат не поддерживается браузером. Сохрани изображение как JPEG, PNG или WebP.'));};
+      img.src=url;
+    });
+  }
+  function seededRandom(seed){
+    let value=seed>>>0;
+    return ()=>{value=(value*1664525+1013904223)>>>0;return value/4294967296;};
+  }
+  function canvasBlob(canvas,mime,quality){
+    return new Promise(resolve=>canvas.toBlob(resolve,mime,quality));
+  }
+  async function makeUniqueVariant(source,index,mime){
+    const width=source.width||source.naturalWidth,height=source.height||source.naturalHeight;
+    if(!width||!height) throw new Error('Не удалось определить размер изображения');
+    if(width*height>50000000) throw new Error('Изображение слишком большое для обработки в браузере (максимум 50 Мп)');
+    const canvas=document.createElement('canvas'); canvas.width=width; canvas.height=height;
+    const ctx=canvas.getContext('2d',{alpha:true,willReadFrequently:false});
+    if(!ctx) throw new Error('Браузер не поддерживает обработку этого изображения');
+    const seedBytes=new Uint32Array(1); crypto.getRandomValues(seedBytes);
+    const random=seededRandom(seedBytes[0]^index);
+    const scale=1+(.00035+random()*.00055),shiftX=(random()-.5)*.7,shiftY=(random()-.5)*.7;
+    ctx.save();
+    ctx.filter=`brightness(${(99.85+random()*.3).toFixed(2)}%) contrast(${(99.9+random()*.2).toFixed(2)}%) saturate(${(99.8+random()*.4).toFixed(2)}%)`;
+    ctx.translate(width/2+shiftX,height/2+shiftY); ctx.scale(scale,scale);
+    ctx.drawImage(source,-width/2,-height/2,width,height); ctx.restore();
+    ctx.save(); ctx.globalAlpha=.012;
+    for(let n=0;n<Math.min(96,Math.max(24,Math.round(width*height/180000)));n++){
+      ctx.fillStyle=`rgb(${Math.floor(random()*256)},${Math.floor(random()*256)},${Math.floor(random()*256)})`;
+      ctx.fillRect(Math.floor(random()*width),Math.floor(random()*height),1,1);
+    }
+    ctx.restore();
+    const quality=(mime==='image/jpeg'||mime==='image/webp') ? .92+random()*.025 : undefined;
+    let blob=await canvasBlob(canvas,mime,quality);
+    if(!blob && mime!=='image/png') blob=await canvasBlob(canvas,'image/png');
+    if(!blob) throw new Error('Браузер не смог сохранить готовое изображение');
+    return blob;
+  }
+  function uniqueOutput(file){
+    if(file.type==='image/jpeg') return {mime:'image/jpeg',ext:'jpg'};
+    if(file.type==='image/webp') return {mime:'image/webp',ext:'webp'};
+    return {mime:'image/png',ext:'png'};
+  }
+  function renderUniqueResults(){
+    uniqueUi.resultsWrap.innerHTML=uniqueUi.results.map((item,index)=>`<article class="unique-result"><img src="${item.url}" alt="Уникальная версия ${index+1}"><div class="unique-result-name">${escapeHtml(item.name)}</div><a class="btn btn-ghost" href="${item.url}" download="${escapeHtml(item.name)}">Скачать</a></article>`).join('');
+    uniqueUi.resultsNote.textContent=`Готово файлов: ${uniqueUi.results.length}`;
+    uniqueUi.downloadAll.hidden=!uniqueUi.results.length;
+  }
+  async function runUniquifier(){
+    if(uniqueUi.running) return;
+    if(!uniqueUi.file){showToast('Сначала выбери изображение');uniqueUi.input.click();return;}
+    const total=clamp(parseInt(uniqueUi.count.value,10)||1,1,30); uniqueUi.count.value=total;
+    uniqueUi.running=true; uniqueUi.start.disabled=true; uniqueUi.start.setAttribute('aria-busy','true'); uniqueUi.input.disabled=true;
+    clearUniqueResults(); setUniqueProgress(0,total,'Открываю изображение…');
+    let source;
+    try{
+      source=await decodeUniqueImage(uniqueUi.file);
+      const output=uniqueOutput(uniqueUi.file),base=(uniqueUi.file.name||'image').replace(/\.[^.]+$/,'').replace(/[^a-zа-яё0-9_-]+/gi,'-').slice(0,70)||'image';
+      for(let index=0;index<total;index++){
+        setUniqueProgress(index,total,`Создаю версию ${index+1} из ${total}…`);
+        await new Promise(requestAnimationFrame);
+        const blob=await makeUniqueVariant(source,index,output.mime);
+        uniqueUi.results.push({url:URL.createObjectURL(blob),name:`${base}-unique-${String(index+1).padStart(2,'0')}.${blob.type==='image/png'?'png':output.ext}`});
+        renderUniqueResults(); setUniqueProgress(index+1,total,`Готово ${index+1} из ${total}`);
+      }
+      showToast(`Создано уникальных версий: ${total}`);
+    }catch(error){
+      showErrorBanner(error?.message||'Не удалось обработать изображение');
+      setUniqueProgress(uniqueUi.results.length,total,'Обработка остановлена');
+    }finally{
+      if(source&&typeof source.close==='function') source.close();
+      uniqueUi.running=false; uniqueUi.start.disabled=false; uniqueUi.start.removeAttribute('aria-busy'); uniqueUi.input.disabled=false;
+    }
+  }
+  uniqueUi.input.addEventListener('change',()=>loadUniqueFile(uniqueUi.input.files?.[0]));
+  uniqueUi.drop.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&!uniqueUi.running){event.preventDefault();uniqueUi.input.click();}});
+  ['dragenter','dragover'].forEach(type=>uniqueUi.drop.addEventListener(type,event=>{event.preventDefault();if(!uniqueUi.running)uniqueUi.drop.classList.add('dragover');}));
+  ['dragleave','drop'].forEach(type=>uniqueUi.drop.addEventListener(type,event=>{event.preventDefault();uniqueUi.drop.classList.remove('dragover');}));
+  uniqueUi.drop.addEventListener('drop',event=>{if(!uniqueUi.running)loadUniqueFile(event.dataTransfer?.files?.[0]);});
+  uniqueUi.start.addEventListener('click',runUniquifier);
+  uniqueUi.downloadAll.addEventListener('click',()=>uniqueUi.results.forEach((item,index)=>setTimeout(()=>{const link=document.createElement('a');link.href=item.url;link.download=item.name;link.click();},index*140)));
+
   // ---------- VIEW SWITCH ----------
   function render(){
     try{
@@ -4353,6 +4484,7 @@
       else if(currentView === 'tasks'){ renderTasksView(); }
       else if(currentView === 'board'){ renderBoard(); }
       else if(currentView === 'notes'){ renderNotesBoard(); }
+      else if(currentView === 'unique'){ /* results are retained for this browser session */ }
       else if(currentView === 'fanpage'){ renderFanpageTable(); }
       else if(currentView === 'table'){ renderTable(); }
     }catch(e){
@@ -4362,7 +4494,7 @@
   }
 
   function setActiveTab(id){
-    ['tabDashboardBtn','tabReportBtn','tabTasksBtn','tabNotesBtn'].forEach(btnId=>{
+    ['tabDashboardBtn','tabReportBtn','tabTasksBtn','tabNotesBtn','tabUniqueBtn'].forEach(btnId=>{
       document.getElementById(btnId).classList.toggle('active', btnId===id);
     });
   }
@@ -4372,6 +4504,7 @@
     notesOuter.style.display='none';
     document.getElementById('dashboardView').style.display='none';
     document.getElementById('tasksView').style.display='none';
+    document.getElementById('uniqueView').style.display='none';
   }
   function switchToReportView(){
     currentView = 'report';
@@ -4401,10 +4534,18 @@
     saveViewState();
     render();
   }
+  function switchToUniqueView(){
+    currentView='unique';
+    setActiveTab('tabUniqueBtn');
+    hideAllViews(); document.getElementById('uniqueView').style.display='block';
+    saveViewState();
+    render();
+  }
   document.getElementById('tabReportBtn').addEventListener('click', switchToReportView);
   document.getElementById('tabDashboardBtn').addEventListener('click', switchToDashboardView);
   document.getElementById('tabTasksBtn').addEventListener('click', switchToTasksView);
   document.getElementById('tabNotesBtn').addEventListener('click', switchToNotesView);
+  document.getElementById('tabUniqueBtn').addEventListener('click', switchToUniqueView);
 
   function showErrorBanner(message){
     let banner = document.getElementById('errorBanner');
