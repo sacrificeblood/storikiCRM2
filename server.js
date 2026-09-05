@@ -41,7 +41,13 @@ async function sendTaskTelegramOnce(taskId, eventKey, text){
      ON CONFLICT DO NOTHING RETURNING task_id`,
     [taskId, eventKey]
   );
-  if(claim.rowCount) await sendTelegramMessage(text);
+  if(claim.rowCount){
+    const sent=await sendTelegramMessage(text);
+    // A temporary Telegram failure must not permanently consume the event.
+    if(!sent) await pool.query('DELETE FROM task_notification_log WHERE task_id=$1 AND event_key=$2',[taskId,eventKey]);
+    return sent;
+  }
+  return false;
 }
 
 function kyivNow(){
@@ -93,6 +99,30 @@ async function deliverDueTaskReminders(){
       `⏰ <b>Выполни это задание!</b>\n${escapeHtmlTg(task.title || '(без названия)')}` +
         (task.description ? `\n${escapeHtmlTg(task.description)}` : '')
     );
+  }
+}
+
+async function deliverDueNoteReminders(){
+  const {date,time}=kyivNow(),nowKey=`${date}T${time}`;
+  const result=await pool.query(`SELECT id,data FROM entities WHERE type='note'`);
+  for(const row of result.rows){
+    const note=row.data||{},reminderAt=String(note.reminderAt||'');
+    if(!note.reminderEnabled || !/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/.test(reminderAt)) continue;
+    if(reminderAt>nowKey || note.reminderSentFor===reminderAt) continue;
+    const eventKey=`note-reminder:${reminderAt}`;
+    const sent=await sendTaskTelegramOnce(
+      row.id,
+      eventKey,
+      `⏰ <b>Напоминание из заметок</b>\n<b>${escapeHtmlTg(note.title||'Без названия')}</b>`+
+        (note.text?`\n${escapeHtmlTg(note.text)}`:'')
+    );
+    const delivered=sent || !!(await pool.query('SELECT 1 FROM task_notification_log WHERE task_id=$1 AND event_key=$2',[row.id,eventKey])).rowCount;
+    if(delivered){
+      await pool.query(
+        `UPDATE entities SET data=jsonb_set(jsonb_set(data,'{reminderSentFor}',to_jsonb($2::text),true),'{reminderSentAt}',to_jsonb(now()::text),true),updated_at=now() WHERE id=$1 AND type='note'`,
+        [row.id,reminderAt]
+      );
+    }
   }
 }
 
@@ -689,7 +719,11 @@ initSchema()
     await seedDefaultDailyTasks();
     app.listen(PORT, () => console.log('Server running on port ' + PORT));
     deliverDueTaskReminders().catch(e => console.error('task reminder check failed:', e.message));
-    setInterval(() => deliverDueTaskReminders().catch(e => console.error('task reminder check failed:', e.message)), 60 * 1000);
+    deliverDueNoteReminders().catch(e => console.error('note reminder check failed:', e.message));
+    setInterval(() => {
+      deliverDueTaskReminders().catch(e => console.error('task reminder check failed:', e.message));
+      deliverDueNoteReminders().catch(e => console.error('note reminder check failed:', e.message));
+    }, 60 * 1000);
   })
   .catch(e => {
     console.error('Failed to init database schema:', e.message);

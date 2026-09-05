@@ -216,6 +216,12 @@
       card.style.left = (note.x||120) + 'px'; card.style.top = (note.y||100) + 'px';
       const title = document.createElement('div'); title.className='mind-note-title'; title.textContent=note.title || 'Без названия'; card.appendChild(title);
       if(note.text){ const text=document.createElement('div'); text.className='mind-note-text'; text.textContent=note.text; card.appendChild(text); }
+      if(note.reminderEnabled&&note.reminderAt){
+        const reminder=document.createElement('div'),sent=note.reminderSentFor===note.reminderAt;
+        reminder.className='mind-note-reminder'+(sent?' sent':'');
+        reminder.textContent=sent?'✓ Отправлено':`⏰ ${note.reminderAt.slice(8,10)}.${note.reminderAt.slice(5,7)} · ${note.reminderAt.slice(11,16)} Киев`;
+        card.appendChild(reminder);
+      }
       const del = document.createElement('button'); del.className='mind-note-delete'; del.type='button'; del.textContent='×'; del.title='Удалить заметку'; del.setAttribute('aria-label','Удалить заметку');
       del.addEventListener('click', e=>{ e.stopPropagation(); openNotesEditor(note.id); }); card.appendChild(del);
       const connect = document.createElement('button'); connect.className='mind-note-link'; connect.type='button'; connect.textContent='•'; connect.title='Потянуть связь'; connect.setAttribute('aria-label','Связать с другой заметкой');
@@ -240,14 +246,34 @@
     const title=document.createElement('input'); title.value=existing?existing.title:''; title.placeholder='Например: идея для оффера'; titleField.appendChild(title); modal.appendChild(titleField);
     const textField=document.createElement('div'); textField.className='field'; textField.innerHTML='<label>Текст</label>';
     const text=document.createElement('textarea'); text.rows=6; text.placeholder='Контекст, ссылки, следующие шаги…'; text.value=existing?existing.text||'':''; textField.appendChild(text); modal.appendChild(textField);
+    const nowPlusFive=new Date(Date.now()+5*60*1000);
+    const reminderParts=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(nowPlusFive).reduce((out,part)=>{out[part.type]=part.value;return out;},{});
+    const defaultReminder=`${reminderParts.year}-${reminderParts.month}-${reminderParts.day}T${reminderParts.hour}:${reminderParts.minute}`;
+    const reminderAt=existing?.reminderAt||defaultReminder;
+    const reminderField=document.createElement('div'); reminderField.className='field';
+    reminderField.innerHTML='<label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;"><input type="checkbox"> Напомнить в Telegram</label>';
+    const reminderCheck=reminderField.querySelector('input'); reminderCheck.checked=!!existing?.reminderEnabled;
+    const reminderRow=document.createElement('div'); reminderRow.className='note-reminder-row';
+    const reminderDate=document.createElement('input'); reminderDate.type='date'; reminderDate.value=reminderAt.slice(0,10); reminderDate.setAttribute('aria-label','Дата напоминания');
+    const reminderTime=document.createElement('input'); reminderTime.type='time'; reminderTime.value=reminderAt.slice(11,16); reminderTime.setAttribute('aria-label','Время напоминания по Киеву');
+    reminderRow.append(reminderDate,reminderTime); reminderField.appendChild(reminderRow);
+    const reminderHelp=document.createElement('div'); reminderHelp.className='note-reminder-help'; reminderHelp.textContent='Время Киева. Бот отправит заголовок и текст заметки один раз.'; reminderField.appendChild(reminderHelp);
+    const syncReminderInputs=()=>{reminderDate.disabled=!reminderCheck.checked;reminderTime.disabled=!reminderCheck.checked;}; reminderCheck.addEventListener('change',syncReminderInputs); syncReminderInputs();
+    modal.appendChild(reminderField);
     const actions=document.createElement('div'); actions.className='modal-actions';
     if(existing){ const remove=document.createElement('button'); remove.className='btn btn-danger'; remove.type='button'; remove.textContent='Удалить'; remove.addEventListener('click',()=>{ state.notes=state.notes.filter(n=>n.id!==existing.id); state.noteLinks=state.noteLinks.filter(l=>l.fromId!==existing.id&&l.toId!==existing.id); saveState(true); render(); document.body.removeChild(overlay); showToast('Заметка удалена'); }); actions.appendChild(remove); }
     const spacer=document.createElement('div'); spacer.className='spacer'; actions.appendChild(spacer);
     const cancel=document.createElement('button'); cancel.className='btn btn-plain'; cancel.type='button'; cancel.textContent='Отмена'; cancel.addEventListener('click',()=>document.body.removeChild(overlay)); actions.appendChild(cancel);
     const save=document.createElement('button'); save.className='btn btn-fan'; save.type='button'; save.textContent='Сохранить'; save.addEventListener('click',()=>{
       if(!title.value.trim()){ showToast('Введите заголовок'); title.focus(); return; }
-      if(existing){ existing.title=title.value.trim(); existing.text=text.value.trim(); }
-      else { const p=position||{x:160,y:120}; state.notes.push({id:uid(),title:title.value.trim(),text:text.value.trim(),x:Math.max(0,Math.round(p.x-120)),y:Math.max(0,Math.round(p.y-58)),createdAt:Date.now()}); }
+      if(reminderCheck.checked&&(!reminderDate.value||!reminderTime.value)){showToast('Укажи дату и время напоминания');return;}
+      const nextReminderAt=reminderCheck.checked?`${reminderDate.value}T${reminderTime.value}`:'';
+      if(existing){
+        existing.title=title.value.trim(); existing.text=text.value.trim(); existing.reminderEnabled=reminderCheck.checked;
+        if(reminderCheck.checked){if(existing.reminderAt!==nextReminderAt){delete existing.reminderSentFor;delete existing.reminderSentAt;}existing.reminderAt=nextReminderAt;}
+        else {delete existing.reminderAt;delete existing.reminderSentFor;delete existing.reminderSentAt;}
+      }
+      else { const p=position||{x:160,y:120}; state.notes.push({id:uid(),title:title.value.trim(),text:text.value.trim(),x:Math.max(0,Math.round(p.x-120)),y:Math.max(0,Math.round(p.y-58)),createdAt:Date.now(),reminderEnabled:reminderCheck.checked,...(reminderCheck.checked?{reminderAt:nextReminderAt}:{})}); }
       saveState(true); render(); document.body.removeChild(overlay);
     }); actions.appendChild(save); modal.appendChild(actions); overlay.appendChild(modal); document.body.appendChild(overlay);
     overlay.addEventListener('click',e=>{if(e.target===overlay)document.body.removeChild(overlay)}); title.focus();
