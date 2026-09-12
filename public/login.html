@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Minon Devils — вход</title>
+  <title>Minon — вход</title>
   <style>
-    :root{color-scheme:dark;--bg:#09070a;--surface:#171016;--line:rgba(245,236,232,.16);--text:#f5ece8;--muted:#aa9ca2;--red:#ed294b}
-    *{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:22px;background:radial-gradient(70% 48% at 50% 0%,#35101a 0%,var(--bg) 62%);font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:var(--text)}
-    main{width:min(100%,390px);border:1px solid var(--line);border-top:2px solid var(--red);background:var(--surface);padding:28px;border-radius:12px;box-shadow:0 28px 80px #0009}h1{margin:0 0 5px;font:900 27px/1 Arial Black,Arial,sans-serif;letter-spacing:-1.4px}p{margin:0 0 24px;color:var(--muted);font-size:14px}label{display:grid;gap:7px;margin:14px 0;font-size:12px;font-weight:700}input{width:100%;height:44px;border:1px solid var(--line);border-radius:7px;background:#0c080b;color:var(--text);padding:0 12px;font:inherit}input:focus{outline:2px solid #ed294b66;border-color:var(--red)}button{width:100%;height:44px;margin-top:10px;border:0;border-radius:7px;background:var(--red);color:white;font:800 14px/1 inherit;cursor:pointer}button:disabled{opacity:.6;cursor:wait}.error{min-height:18px;margin-top:12px;color:#ff9aab;font-size:13px}.foot{margin:20px 0 0;font-size:11px;color:#70636a;text-align:center}
+    :root{color-scheme:dark;--bg:#020806;--surface:#07130d;--line:rgba(190,255,211,.16);--text:#eefbf3;--muted:#8eaa98;--green:#2eea72}
+    *{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:22px;background:radial-gradient(70% 48% at 50% 0%,#0b5228 0%,var(--bg) 64%);font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:var(--text)}
+    main{width:min(100%,390px);border:1px solid var(--line);border-top:2px solid var(--green);background:linear-gradient(150deg,#091a10,var(--surface));padding:28px;border-radius:12px;box-shadow:0 28px 80px #0009,0 0 48px rgba(46,234,114,.08)}.login-brand{display:flex;align-items:center;gap:13px;margin-bottom:7px}.login-mark{width:48px;height:48px;filter:drop-shadow(0 0 12px rgba(46,234,114,.35))}h1{margin:0;font:900 27px/1 Arial Black,Arial,sans-serif;letter-spacing:-1.4px}p{margin:0 0 24px;color:var(--muted);font-size:14px}label{display:grid;gap:7px;margin:14px 0;font-size:12px;font-weight:700}input{width:100%;height:44px;border:1px solid var(--line);border-radius:7px;background:#030a06;color:var(--text);padding:0 12px;font:inherit}input:focus{outline:2px solid rgba(46,234,114,.38);border-color:var(--green)}button{width:100%;height:44px;margin-top:10px;border:0;border-radius:7px;background:var(--green);color:#011b0a;font:900 14px/1 inherit;cursor:pointer}button:hover{background:#52f489}button:disabled{opacity:.6;cursor:wait}.error{min-height:18px;margin-top:12px;color:#ff9aab;font-size:13px}.foot{margin:20px 0 0;font-size:11px;color:#60806a;text-align:center}
   </style>
 </head>
 <body>
   <main>
-    <h1>MINON DEVILS</h1>
+    <div class="login-brand"><svg class="login-mark" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="eyeGreen" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#a7ffc5"/><stop offset=".5" stop-color="#2eea72"/><stop offset="1" stop-color="#0b7436"/></linearGradient><filter id="eyeGlow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><rect width="64" height="64" rx="12" fill="#020806" stroke="#2eea7255"/><g fill="url(#eyeGreen)" filter="url(#eyeGlow)"><path d="M7 18 29 34 10 28Z"/><path d="M57 18 35 34 54 28Z"/></g></svg><h1>MINON</h1></div>
     <p>Вход в закрытое рабочее пространство.</p>
     <form id="loginForm" novalidate>
       <label>Email<input id="email" type="email" autocomplete="username" required></label>

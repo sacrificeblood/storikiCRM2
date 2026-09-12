@@ -1,4 +1,4 @@
-# Minon Devils UX Contract
+# Minon UX Contract
 
 ## Canonical behavior
 

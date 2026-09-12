@@ -178,7 +178,7 @@
   function drawNoteLinks(){
     notesSvg.innerHTML = '';
     const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
-    defs.innerHTML='<linearGradient id="mindLinkGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ed294b" stop-opacity=".5"/><stop offset="52%" stop-color="#f6b368" stop-opacity=".92"/><stop offset="100%" stop-color="#ed294b" stop-opacity=".55"/></linearGradient>';
+    defs.innerHTML='<linearGradient id="mindLinkGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2eea72" stop-opacity=".5"/><stop offset="52%" stop-color="#8dffb5" stop-opacity=".92"/><stop offset="100%" stop-color="#159c4d" stop-opacity=".6"/></linearGradient>';
     notesSvg.appendChild(defs);
     const byId = Object.fromEntries((state.notes||[]).map(n=>[n.id,n]));
     (state.noteLinks||[]).forEach(link=>{
@@ -1435,7 +1435,7 @@
       const a = document.createElement('a');
       a.href = url;
       const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
-      a.download = 'story-devils-backup-' + stamp + '.json';
+      a.download = 'minon-backup-' + stamp + '.json';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -4657,10 +4657,12 @@
     if(!heading) return;
     const icon = heading.querySelector('img');
     if(!icon) return;
-    icon.alt = 'Minon Devils';
+    icon.alt = 'Minon';
+    icon.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#91ffb8"/><stop offset=".48" stop-color="#2eea72"/><stop offset="1" stop-color="#0b7436"/></linearGradient><filter id="s" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><rect width="64" height="64" rx="12" fill="#020806"/><g fill="url(#g)" filter="url(#s)"><path d="M7 18 29 34 10 28Z"/><path d="M57 18 35 34 54 28Z"/></g><path d="M11 21 27 33 13 27Z" fill="#b8ffce" opacity=".24"/><path d="M53 21 37 33 51 27Z" fill="#b8ffce" opacity=".24"/></svg>');
+    document.querySelectorAll('link[rel="icon"],link[rel="apple-touch-icon"]').forEach(link=>{link.href=icon.src;});
     const brand = document.createElement('span');
     brand.className = 'minon-brand-lockup';
-    brand.innerHTML = '<strong>MINON</strong><em>DEVILS</em><small>TRAFFIC DEVILS</small>';
+    brand.innerHTML = '<strong>MINON</strong><small>TRAFFIC SYSTEM</small>';
     heading.replaceChildren(icon, brand);
   }
   applyMinonBrand();
