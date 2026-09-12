@@ -150,6 +150,9 @@ app.use(express.json({ limit: '5mb' }));
 // ---------- Authentication and workspace isolation ----------
 const SESSION_COOKIE = 'minon_session';
 const SESSION_DAYS = 14;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 10;
+const loginAttempts = new Map();
 function uid(){ return crypto.randomBytes(18).toString('base64url'); }
 function hashToken(token){ return crypto.createHash('sha256').update(token).digest('hex'); }
 function hashPassword(password){
@@ -159,7 +162,7 @@ function hashPassword(password){
 }
 function verifyPassword(password, stored){
   const [,salt,expected]=String(stored||'').split(':');
-  if(!salt || !expected) return false;
+  if(!/^[a-f0-9]{32}$/i.test(salt||'') || !/^[a-f0-9]{128}$/i.test(expected||'')) return false;
   const actual=crypto.scryptSync(password,salt,64).toString('hex');
   return crypto.timingSafeEqual(Buffer.from(actual,'hex'),Buffer.from(expected,'hex'));
 }
@@ -235,6 +238,26 @@ function isDailyTaskCompletion(user, type, existing, nextData){
 function setSessionCookie(res, token){
   res.cookie(SESSION_COOKIE,token,{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:SESSION_DAYS*24*60*60*1000,path:'/'});
 }
+function loginKey(req,email){ return `${req.ip||req.socket?.remoteAddress||'unknown'}:${email}`; }
+function checkLoginLimit(key){
+  const now=Date.now(), current=loginAttempts.get(key);
+  if(!current || now-current.startedAt>=LOGIN_WINDOW_MS){ loginAttempts.set(key,{startedAt:now,count:0}); return 0; }
+  return current.count;
+}
+function recordFailedLogin(key){
+  const current=loginAttempts.get(key)||{startedAt:Date.now(),count:0};
+  current.count+=1; loginAttempts.set(key,current);
+}
+
+app.disable('x-powered-by');
+app.use((req,res,next)=>{
+  res.setHeader('X-Content-Type-Options','nosniff');
+  res.setHeader('X-Frame-Options','DENY');
+  res.setHeader('Referrer-Policy','same-origin');
+  res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');
+  res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
+  next();
+});
 async function seedAdmin(){
   const email=String(process.env.ADMIN_EMAIL||'').trim().toLowerCase();
   const password=String(process.env.ADMIN_PASSWORD||'');
@@ -252,8 +275,18 @@ app.post('/api/auth/login', async (req,res)=>{
   try{
     const email=String(req.body?.email||'').trim().toLowerCase();
     const password=String(req.body?.password||'');
+    if(email.length>254 || password.length>256) return res.status(401).json({error:'Неверный email или пароль'});
+    const key=loginKey(req,email);
+    if(checkLoginLimit(key)>=LOGIN_MAX_ATTEMPTS){
+      res.setHeader('Retry-After',String(Math.ceil(LOGIN_WINDOW_MS/1000)));
+      return res.status(429).json({error:'Слишком много попыток. Попробуйте через 15 минут'});
+    }
     const result=await pool.query('SELECT * FROM users WHERE email=$1 AND active=true',[email]);
-    if(!result.rows.length || !verifyPassword(password,result.rows[0].password_hash)) return res.status(401).json({error:'Неверный email или пароль'});
+    if(!result.rows.length || !verifyPassword(password,result.rows[0].password_hash)){
+      recordFailedLogin(key);
+      return res.status(401).json({error:'Неверный email или пароль'});
+    }
+    loginAttempts.delete(key);
     const token=uid();
     await pool.query('INSERT INTO user_sessions (token_hash,user_id,expires_at) VALUES ($1,$2,now() + ($3 || \' days\')::interval)',[hashToken(token),result.rows[0].id,String(SESSION_DAYS)]);
     setSessionCookie(res,token);
@@ -273,7 +306,8 @@ app.get('/api/health', async (req, res) => {
     const result = await pool.query('SELECT NOW() as now, (SELECT count(*) FROM entities) as entities');
     res.json({ ok: true, db: 'connected', serverTime: result.rows[0].now, entityCount: Number(result.rows[0].entities) });
   }catch(e){
-    res.status(500).json({ ok: false, db: 'error', error: e.message });
+    console.error('health check failed',e.message);
+    res.status(503).json({ ok: false, db: 'error' });
   }
 });
 
@@ -449,9 +483,9 @@ app.get('/api/telegram-recipients', async (req,res)=>{
 });
 
 const ACTIVITY_LOG_LIMIT = 300;
-async function logActivity(user, action){
+async function logActivity(user, action, workspaceId){
   try{
-    await pool.query('INSERT INTO activity_log (user_email, action, workspace_id) VALUES ($1,$2,$3)', [user?.email||'system', action, user?.workspaceId||'main']);
+    await pool.query('INSERT INTO activity_log (user_email, action, workspace_id) VALUES ($1,$2,$3)', [user?.email||'system', action, workspaceId||user?.workspaceId||'main']);
     await pool.query(
       `DELETE FROM activity_log WHERE id NOT IN (
          SELECT id FROM activity_log ORDER BY created_at DESC LIMIT $1
@@ -539,6 +573,7 @@ app.put('/api/entities/:type/:id', async (req, res) => {
         // when they have no general Tasks editing grant.
         const oldData=existing.data||{};
         const nextColumn=String(data.column||oldData.column||'todo');
+        if(!Object.prototype.hasOwnProperty.call(TASK_COLUMN_LABELS,nextColumn)) return res.status(400).json({error:'Недопустимый статус задачи'});
         data={...oldData,column:nextColumn};
         if(nextColumn==='done'){
           data.completedAt=String(req.body?.completedAt||kyivNow().date);
@@ -566,7 +601,9 @@ app.put('/api/entities/:type/:id', async (req, res) => {
         if(oldData.column !== data.column){
           const fromLabel = TASK_COLUMN_LABELS[oldData.column] || oldData.column || '—';
           const toLabel = TASK_COLUMN_LABELS[data.column] || data.column || '—';
-          notifyEventKey = `column:${oldData.column || ''}:${data.column || ''}`;
+          const notificationSeq=(Number(oldData.notificationSeq)||0)+1;
+          data.notificationSeq=notificationSeq;
+          notifyEventKey = `column:${notificationSeq}:${oldData.column || ''}:${data.column || ''}`;
           if(data.column==='confirm'){
             const mention=await buyerMentionForCanvas(workspaceId);
             notifyMsg = `🧾 <b>Нужно подтвердить задачу</b>${mention?` · ${mention}`:''}\n<b>${escapeHtmlTg(data.title || '(без названия)')}</b>`+
@@ -585,7 +622,7 @@ app.put('/api/entities/:type/:id', async (req, res) => {
     );
 
     if(notifyMsg) await sendTaskTelegramOnce(id, notifyEventKey, notifyMsg);
-    logActivity(req.user, `${existing ? 'Изменил' : 'Создал'}: ${type}`);
+    logActivity(req.user, `${existing ? 'Изменил' : 'Создал'}: ${type}`, workspaceId);
     res.json({ ok: true });
   }catch(e){
     console.error(e);
@@ -614,7 +651,7 @@ app.delete('/api/entities/:type/:id', async (req, res) => {
     }
     await pool.query('DELETE FROM entities WHERE id=$1 AND workspace_id=$2', [id,workspaceId]);
     if(notifyMsg) await sendTaskTelegramOnce(id, 'deleted', notifyMsg);
-    logActivity(req.user, `Удалил: ${type}`);
+    logActivity(req.user, `Удалил: ${type}`, workspaceId);
     res.json({ ok: true });
   }catch(e){
     console.error(e);
@@ -640,7 +677,7 @@ app.post('/api/entities/bulk', async (req, res) => {
       );
     }
     await client.query('COMMIT');
-    logActivity(req.user, 'Импортировал ' + items.length + ' записей');
+    logActivity(req.user, 'Импортировал ' + items.length + ' записей', 'main');
     res.json({ ok: true, count: items.length });
   }catch(e){
     await client.query('ROLLBACK');
@@ -673,7 +710,8 @@ app.post('/api/trash', async (req, res) => {
       [id, type, JSON.stringify(data || {}), label || '', workspaceFor(req)]
     );
     // keep only the most recent 200 trash entries so this table never grows unbounded
-    await pool.query(`DELETE FROM trash WHERE id NOT IN (SELECT id FROM trash ORDER BY deleted_at DESC LIMIT 200)`);
+    const trashWorkspace=workspaceFor(req);
+    await pool.query(`DELETE FROM trash WHERE workspace_id=$1 AND id NOT IN (SELECT id FROM trash WHERE workspace_id=$1 ORDER BY deleted_at DESC LIMIT 200)`,[trashWorkspace]);
     res.json({ ok: true });
   }catch(e){
     console.error(e);
@@ -712,7 +750,7 @@ app.post('/api/trash/:id/restore', async (req, res) => {
     );
     await client.query('DELETE FROM trash WHERE id=$1', [req.params.id]);
     await client.query('COMMIT');
-    logActivity(req.user, `Восстановил: ${type}`);
+    logActivity(req.user, `Восстановил: ${type}`, workspaceFor(req));
     res.json({ ok: true, type, data });
   }catch(e){
     await client.query('ROLLBACK');
@@ -754,7 +792,9 @@ app.get('/api/activity', async (req, res) => {
     if(!['admin','buyer'].includes(req.user.role)) return res.status(403).json({error:'Недостаточно прав'});
     const result=req.user.role==='admin'
       ? await pool.query('SELECT user_email, action, created_at FROM activity_log ORDER BY created_at DESC LIMIT 100')
-      : await pool.query('SELECT user_email, action, created_at FROM activity_log WHERE workspace_id=$1 AND user_email<>$2 ORDER BY created_at DESC LIMIT 100',[req.user.workspaceId,req.user.email]);
+      : await pool.query(`SELECT user_email, action, created_at FROM activity_log
+          WHERE workspace_id IN (SELECT id FROM crm_canvases WHERE owner_id=$1)
+            AND user_email<>$2 ORDER BY created_at DESC LIMIT 100`,[req.user.id,req.user.email]);
     res.json({ entries: result.rows });
   }catch(e){
     res.status(500).json({ error: 'DB error: ' + e.message });

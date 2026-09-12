@@ -4176,12 +4176,9 @@
     item.column = 'done';
     item.completedAt = kyivDate();
     if(item.dailyReminder){
-      // Between midnight and today's scheduled time, the completion belongs to
-      // yesterday's occurrence. Today's reminder must remain scheduled.
-      const due = dailyDueSeconds(item);
-      item.completedForDate = due != null && currentKyivSeconds() < due
-        ? kyivDateFor(new Date(appNow().getTime() - 24 * 60 * 60 * 1000))
-        : kyivDate();
+      // Completing a daily item always completes the current Kyiv calendar day.
+      // Its countdown then advances to tomorrow, even when it was completed early.
+      item.completedForDate = kyivDate();
       delete item.manualReminderStartedAt;
     }
     saveState(true);

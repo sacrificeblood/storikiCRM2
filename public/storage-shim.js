@@ -2,11 +2,16 @@
   // `main` is now a real shareable CRM canvas. It must be sent explicitly for
   // buyers and assistants; omitting it falls back to their legacy empty workspace.
   const workspace=()=>window.activeWorkspace?`?canvas=${encodeURIComponent(window.activeWorkspace)}`:'';
+  const scoped=(path)=>path+workspace();
+  async function responseError(res, fallback){
+    const data=await res.json().catch(()=>({}));
+    return new Error(data.error||`${fallback} (${res.status})`);
+  }
   // ---------- Entities API — one call per entity, never a shared document ----------
   window.entitiesApi = {
     async loadAll(){
       const res = await fetch('/api/entities'+workspace(), { credentials: 'include' });
-      if(!res.ok) throw new Error('Failed to load entities (' + res.status + ')');
+      if(!res.ok) throw await responseError(res,'Не удалось загрузить данные');
       const data = await res.json();
       return data.entities || [];
     },
@@ -18,7 +23,7 @@
         keepalive: true,
         body: JSON.stringify(data)
       });
-      if(!res.ok) throw new Error('Failed to save ' + type + ' (' + res.status + ')');
+      if(!res.ok) throw await responseError(res,'Не удалось сохранить '+type);
       return true;
     },
     async deleteEntity(type, id){
@@ -27,7 +32,7 @@
         credentials: 'include',
         keepalive: true
       });
-      if(!res.ok) throw new Error('Failed to delete ' + type + ' (' + res.status + ')');
+      if(!res.ok) throw await responseError(res,'Не удалось удалить '+type);
       return true;
     },
     async startTaskReminderTimer(id){
@@ -47,34 +52,34 @@
         credentials: 'include',
         body: JSON.stringify({ items })
       });
-      if(!res.ok) throw new Error('Bulk import failed (' + res.status + ')');
+      if(!res.ok) throw await responseError(res,'Не удалось импортировать данные');
       return await res.json();
     },
     async loadTrash(){
-      const res = await fetch('/api/trash', { credentials: 'include' });
-      if(!res.ok) throw new Error('Failed to load trash (' + res.status + ')');
+      const res = await fetch(scoped('/api/trash'), { credentials: 'include' });
+      if(!res.ok) throw await responseError(res,'Не удалось загрузить историю');
       const data = await res.json();
       return data.entries || [];
     },
     async pushTrash(id, type, data, label){
-      const res = await fetch('/api/trash', {
+      const res = await fetch(scoped('/api/trash'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         keepalive: true,
         body: JSON.stringify({ id, type, data, label })
       });
-      if(!res.ok) throw new Error('Failed to push trash (' + res.status + ')');
+      if(!res.ok) throw await responseError(res,'Не удалось сохранить запись в истории');
       return true;
     },
     async deleteTrash(id){
-      const res = await fetch('/api/trash/' + encodeURIComponent(id), { method: 'DELETE', credentials: 'include' });
-      if(!res.ok) throw new Error('Failed to delete trash entry (' + res.status + ')');
+      const res = await fetch(scoped('/api/trash/' + encodeURIComponent(id)), { method: 'DELETE', credentials: 'include' });
+      if(!res.ok) throw await responseError(res,'Не удалось удалить запись из истории');
       return true;
     },
     async restoreTrash(id){
-      const res = await fetch('/api/trash/' + encodeURIComponent(id) + '/restore', { method: 'POST', credentials: 'include' });
-      if(!res.ok) throw new Error('Failed to restore (' + res.status + ')');
+      const res = await fetch(scoped('/api/trash/' + encodeURIComponent(id) + '/restore'), { method: 'POST', credentials: 'include' });
+      if(!res.ok) throw await responseError(res,'Не удалось восстановить запись');
       return await res.json();
     },
     async legacyGet(key){

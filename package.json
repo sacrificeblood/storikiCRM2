@@ -4,7 +4,9 @@
   "description": "Minon — traffic CRM with shared Postgres storage",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check": "node scripts/check-static.js",
+    "smoke:ui": "node scripts/smoke-server.js"
   },
   "engines": {
     "node": ">=18"
