@@ -3254,7 +3254,7 @@
     renderCreoView();
   });
 
-  // ---------- CAMPAIGN SHEET (Geo -> Campaigns, day-sheets like CreoChecker, + duplication) ----------
+  // ---------- CAMPAIGN SHEET (Creative -> Campaigns, day-sheets like CreoChecker, + duplication) ----------
   const CAMP_STATUS = {
     active: { label: 'Актив',   color: '#4caf6b' },
     reject: { label: 'Реджект', color: 'var(--danger)' },
@@ -3284,7 +3284,9 @@
     return d;
   }
 
-  // ---- Geo CRUD ----
+  // The historic data key is still `geos` for compatibility. In the interface these
+  // records are creatives; each campaign inside a creative carries its own GEO.
+  // ---- Creative CRUD ----
   function openCampGeoEditor(id){
     const isEdit = !!id;
     const data = campData();
@@ -3294,11 +3296,11 @@
     overlay.className = 'overlay';
     const modal = document.createElement('div');
     modal.className = 'modal'; modal.style.maxWidth = '320px';
-    modal.innerHTML = `<h3>${isEdit ? 'Гео' : 'Новое гео'}</h3>`;
+    modal.innerHTML = `<h3>${isEdit ? 'Крео' : 'Новое крео'}</h3>`;
     const field = document.createElement('div'); field.className='field';
-    field.innerHTML = `<label>Название гео</label>`;
+    field.innerHTML = `<label>Название крео</label>`;
     const nameInput = document.createElement('input');
-    nameInput.placeholder = 'например, Bolivia'; nameInput.value = item.name || '';
+    nameInput.placeholder = 'например, BOpassbak00082'; nameInput.value = item.name || '';
     field.appendChild(nameInput);
     modal.appendChild(field);
     const actions = document.createElement('div'); actions.className='modal-actions';
@@ -3314,7 +3316,7 @@
     actions.appendChild(cancelBtn);
     const saveBtn = document.createElement('button'); saveBtn.className='btn btn-fan'; saveBtn.textContent='Сохранить'; saveBtn.type='button';
     saveBtn.addEventListener('click', safe(()=>{
-      if(!nameInput.value.trim()){ showToast('Введите гео'); return; }
+      if(!nameInput.value.trim()){ showToast('Введите название крео'); return; }
       item.name = nameInput.value.trim();
       if(!isEdit) data.geos.push(item);
       saveState(true);
@@ -3334,7 +3336,7 @@
     const item = data.geos.find(g=>g.id===id);
     if(!item) return;
     const campsUnder = data.campaigns.filter(c=>c.geoId===id);
-    if(!confirm(`Удалить гео "${item.name}" (за ${fmtDM(currentCampDay)}) вместе с ${campsUnder.length} кампаниями? Другие дни это не затронет.`)) return;
+    if(!confirm(`Удалить крео "${item.name}" (за ${fmtDM(currentCampDay)}) вместе с ${campsUnder.length} кампаниями? Другие дни это не затронет.`)) return;
     campsUnder.forEach(c => pushToTrash('campcampaign', {...c, _campDay: currentCampDay}, item.name + ' / ' + c.name));
     pushToTrash('campgeo', {...item, _campDay: currentCampDay}, item.name);
     data.campaigns = data.campaigns.filter(c=>c.geoId!==id);
@@ -3373,8 +3375,8 @@
     const data = campData();
     const item = isEdit ? data.campaigns.find(c=>c.id===id) : {
       id: uid(), geoId, name:'', status:'active', comment:'', task:'',
-      creative:'', bidBudget:'', adsetsCount:1, dateFeed: todayStr(),
-      cabinet:'', pixel:'', domain:'', fp:''
+      geo:'', bidBudget:'', adsetsCount:1, dateFeed: todayStr(),
+      account:'', pixel:'', domain:'', fp:''
     };
     if(isEdit && !item) return;
     collectCampAutocomplete();
@@ -3390,8 +3392,8 @@
     }
     const nameInput = document.createElement('input'); nameInput.placeholder='название кампании'; nameInput.value = item.name || '';
     field('Название кампании', nameInput);
-    const creativeInput = document.createElement('input'); creativeInput.placeholder='например, BOpassbak00082'; creativeInput.value = item.creative || '';
-    field('Крео', creativeInput);
+    const geoInput = document.createElement('input'); geoInput.placeholder='например, Bolivia'; geoInput.value = item.geo || item.creative || '';
+    field('GEO', geoInput);
     const bidInput = document.createElement('input'); bidInput.placeholder='например, 1-1-1 500$ CBO bid100'; bidInput.value = item.bidBudget || '';
     bidInput.setAttribute('list', 'bidBudgetAutocomplete');
     field('БИД/Бюджет', bidInput);
@@ -3399,8 +3401,8 @@
     field('Кол-во адсетов', adsetsInput);
     const dateInput = document.createElement('input'); dateInput.type='date'; dateInput.value = item.dateFeed || currentCampDay;
     field('Дата залива', dateInput);
-    const cabinetInput = document.createElement('input'); cabinetInput.placeholder='ID кабинета'; cabinetInput.value = item.cabinet || '';
-    field('Кабинет', cabinetInput);
+    const accountInput = document.createElement('input'); accountInput.placeholder='ID аккаунта / кабинета'; accountInput.value = item.account || item.cabinet || '';
+    field('Аккаунт', accountInput);
     const pixelInput = document.createElement('input'); pixelInput.placeholder='ID пикселя'; pixelInput.value = item.pixel || '';
     pixelInput.setAttribute('list', 'pixelAutocomplete');
     field('Пиксель', pixelInput);
@@ -3426,11 +3428,11 @@
     saveBtn.addEventListener('click', safe(()=>{
       if(!nameInput.value.trim()){ showToast('Введите название кампании'); return; }
       item.name = nameInput.value.trim();
-      item.creative = creativeInput.value.trim();
+      item.geo = geoInput.value.trim();
       item.bidBudget = bidInput.value.trim();
       item.adsetsCount = Number(adsetsInput.value) || 0;
       item.dateFeed = dateInput.value || currentCampDay;
-      item.cabinet = cabinetInput.value.trim();
+      item.account = accountInput.value.trim();
       item.pixel = pixelInput.value.trim();
       item.domain = domainInput.value.trim();
       item.fp = fpInput.value.trim();
@@ -3474,7 +3476,7 @@
     if(!item) return;
     const nextDayKey = addOneDay(currentCampDay);
     const nextDay = ensureCampDay(nextDayKey);
-    const geoName = (today.geos.find(g=>g.id===item.geoId) || {}).name || 'Без гео';
+    const geoName = (today.geos.find(g=>g.id===item.geoId) || {}).name || 'Без крео';
     let targetGeo = nextDay.geos.find(g=>g.name===geoName);
     if(!targetGeo){ targetGeo = { id: uid(), name: geoName }; nextDay.geos.push(targetGeo); }
     nextDay.campaigns.push({
@@ -3608,8 +3610,8 @@
         if(!geoMatches){
           camps = camps.filter(c =>
             (c.name||'').toLowerCase().includes(search) ||
-            (c.creative||'').toLowerCase().includes(search) ||
-            (c.cabinet||'').toLowerCase().includes(search) ||
+            (c.geo||c.creative||'').toLowerCase().includes(search) ||
+            (c.account||c.cabinet||'').toLowerCase().includes(search) ||
             (c.domain||'').toLowerCase().includes(search) ||
             (c.fp||'').toLowerCase().includes(search) ||
             (c.task||'').toLowerCase().includes(search) ||
@@ -3630,16 +3632,16 @@
           <span class="accs-caret ${geoOpen?'open':''}">▸</span>
           <span style="flex:1;">${escapeHtml(geo.name)} <span class="count">— ${camps.length} кампаний, ${totalAdsets} адсетов</span></span>
           <button type="button" class="accs-mini-btn add-camp-btn" data-geo-id="${geo.id}" title="Добавить кампанию">+ Кампания</button>
-          <button type="button" class="accs-mini-btn edit-camp-geo-btn" data-geo-id="${geo.id}" title="Изменить">✎</button>
-          <button type="button" class="accs-mini-btn del-camp-geo-btn" data-geo-id="${geo.id}" title="Удалить">✕</button>
+          <button type="button" class="accs-mini-btn edit-camp-geo-btn" data-geo-id="${geo.id}" title="Изменить крео">✎</button>
+          <button type="button" class="accs-mini-btn del-camp-geo-btn" data-geo-id="${geo.id}" title="Удалить крео">✕</button>
         </div>`;
       if(geoOpen){
         if(camps.length === 0){
           html += `<div class="muted" style="padding:8px 12px 8px 30px; font-size:12px;">Нет кампаний на этом дне — добавьте кнопкой «+ Кампания» выше.</div>`;
         }else{
           html += `<div class="creo-table-scroll"><table class="camp-table"><thead><tr>
-            <th>Название кампании</th><th>Статус / Коммент</th><th>Задача</th><th>Крео</th><th>БИД/Бюджет</th>
-            <th>Кол-во адсетов</th><th>Дата залива</th><th>Кабинет</th><th>Пиксель</th><th>Домен</th><th>FP</th><th></th>
+            <th>Название кампании</th><th>Статус / Коммент</th><th>Задача</th><th>GEO</th><th>БИД/Бюджет</th>
+            <th>Кол-во адсетов</th><th>Дата залива</th><th>Аккаунт</th><th>Пиксель</th><th>Домен</th><th>FP</th><th></th>
           </tr></thead><tbody>`;
           camps.forEach(c => {
             const st = CAMP_STATUS[c.status] || CAMP_STATUS.active;
@@ -3654,11 +3656,11 @@
                 ${c.comment ? `<div class="muted" style="font-size:10.5px; margin-top:2px;">${escapeHtml(c.comment)}</div>` : ''}
               </td>
               <td><button type="button" class="camp-task-btn task-click" data-campaign-id="${c.id}" title="${c.task?escapeHtml(c.task):'Добавить задачу'}">${c.task?escapeHtml(c.task):'+ задача'}</button></td>
-              <td>${escapeHtml(c.creative||'—')}</td>
+              <td>${escapeHtml(c.geo||c.creative||'—')}</td>
               <td>${escapeHtml(c.bidBudget||'—')}</td>
               <td>${Number(c.adsetsCount)||0}</td>
               <td>${escapeHtml(fmtDMY(c.dateFeed)||'—')}</td>
-              <td>${escapeHtml(c.cabinet||'—')}</td>
+              <td>${escapeHtml(c.account||c.cabinet||'—')}</td>
               <td>${escapeHtml(c.pixel||'—')}</td>
               <td>${domainHtml}</td>
               <td>${escapeHtml(c.fp||'—')}</td>
@@ -3678,7 +3680,7 @@
 
     document.getElementById('campResultCount').textContent = `Найдено: ${totalShown}`;
     const wrap = document.getElementById('campTreeWrap');
-    wrap.innerHTML = html || '<div class="empty-state">На этом дне пока пусто. Начните с кнопки «+ Добавить гео» выше — или перенесите кампанию с предыдущего дня.</div>';
+    wrap.innerHTML = html || '<div class="empty-state">На этом дне пока пусто. Начните с кнопки «+ Добавить крео» выше — или перенесите кампанию с предыдущего дня.</div>';
   }
 
   function setupCampaignDelegation(){
