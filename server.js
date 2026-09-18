@@ -544,7 +544,15 @@ app.put('/api/entities/:type/:id', async (req, res) => {
     if(typeof data !== 'object' || data === null) return res.status(400).json({ error: 'body must be a JSON object' });
 
     const workspaceId=workspaceFor(req);
-    const existingResult=await pool.query('SELECT type,data,workspace_id FROM entities WHERE id=$1',[id]);
+    // Some installations still have rows from an early migration where the
+    // physical primary key was stored as "type:realId".  The browser has always
+    // addressed those records by realId, so resolve that legacy key here rather
+    // than inserting a duplicate and later failing to delete the old row.
+    const legacyId=`${type}:${id}`;
+    const existingResult=await pool.query(
+      'SELECT id,type,data,workspace_id FROM entities WHERE id=$1 OR id=$2 LIMIT 1',
+      [id, legacyId]
+    );
     const existing=existingResult.rows[0];
     if(existing && existing.type!==type) return res.status(400).json({error:'Тип записи нельзя изменить'});
     if(existing && existing.workspace_id!==workspaceId) return res.status(403).json({error:'Нет доступа к этому пространству'});
@@ -615,10 +623,11 @@ app.put('/api/entities/:type/:id', async (req, res) => {
       }
     }
 
+    const storageId=existing?.id || id;
     await pool.query(
       `INSERT INTO entities (id, type, data, workspace_id, updated_at) VALUES ($1,$2,$3,$4, now())
        ON CONFLICT (id) DO UPDATE SET type=$2, data=$3, workspace_id=$4, updated_at=now()`,
-      [id, type, JSON.stringify(data), workspaceId]
+      [storageId, type, JSON.stringify(data), workspaceId]
     );
 
     if(notifyMsg) await sendTaskTelegramOnce(id, notifyEventKey, notifyMsg);
@@ -638,7 +647,11 @@ app.delete('/api/entities/:type/:id', async (req, res) => {
   try{
     const { type, id } = req.params;
     const workspaceId=workspaceFor(req);
-    const found=await pool.query('SELECT type,data,workspace_id FROM entities WHERE id=$1',[id]);
+    const legacyId=`${type}:${id}`;
+    const found=await pool.query(
+      'SELECT id,type,data,workspace_id FROM entities WHERE id=$1 OR id=$2 LIMIT 1',
+      [id,legacyId]
+    );
     if(!found.rows.length) return res.status(404).json({error:'Не найдено'});
     if(found.rows[0].type!==type) return res.status(400).json({error:'Неверный тип записи'});
     if(found.rows[0].workspace_id!==workspaceId || !canEditEntity(req,type,found.rows[0]) || type==='task' && req.user.role!=='admin') return res.status(403).json({error:'Недостаточно прав для удаления'});
@@ -649,7 +662,7 @@ app.delete('/api/entities/:type/:id', async (req, res) => {
         notifyMsg = `🗑️ <b>Задача удалена:</b> ${escapeHtmlTg((existing.rows[0].data||{}).title || id)}`;
       }
     }
-    await pool.query('DELETE FROM entities WHERE id=$1 AND workspace_id=$2', [id,workspaceId]);
+    await pool.query('DELETE FROM entities WHERE id=$1 AND workspace_id=$2', [found.rows[0].id,workspaceId]);
     if(notifyMsg) await sendTaskTelegramOnce(id, 'deleted', notifyMsg);
     logActivity(req.user, `Удалил: ${type}`, workspaceId);
     res.json({ ok: true });
