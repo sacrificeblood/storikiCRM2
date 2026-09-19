@@ -9,7 +9,7 @@
       return { naming: u.naming || '', url: u.url || '' };
     }).filter(u=>u.url).slice(0, MAX_URLS);
   }
-  let state = { layers: [], fanpages: [], creatives: [], links: [], fanpageRegistry: [], notes: [], noteLinks: [], launchPlans: [], linkBuilders: [], reports: {}, deletedItems: [], currentLayerId: null };
+  let state = { layers: [], fanpages: [], creatives: [], links: [], fanpageRegistry: [], notes: [], noteLinks: [], launchPlans: [], linkBuilders: [], creativeTextDocs: [], reports: {}, deletedItems: [], currentLayerId: null };
   const VIEW_STATE_KEY = 'adboard-view-state-v3';
   function loadViewState(){
     try{
@@ -395,6 +395,7 @@
     (state.noteLinks||[]).forEach(x => push('noteLink', x));
     (state.launchPlans||[]).forEach(x => push('launchPlan', x));
     (state.linkBuilders||[]).forEach(x => push('linkBuilder', x));
+    (state.creativeTextDocs||[]).forEach(x => push('creativeTextDoc', x));
 
     const spendRev = (state.reports && state.reports.spendRev) || {};
     Object.keys(spendRev).forEach(monthKey => {
@@ -445,6 +446,7 @@
     state.noteLinks = byType.noteLink || [];
     state.launchPlans = byType.launchPlan || [];
     state.linkBuilders = byType.linkBuilder || [];
+    state.creativeTextDocs = byType.creativeTextDoc || [];
 
     state.reports = {};
     state.reports.spendRev = {};
@@ -570,6 +572,7 @@
     }
 
     (reports.geoCipher||[]).forEach(x => push('geocipher', x));
+    (parsed.creativeTextDocs||[]).forEach(x => push('creativeTextDoc', x));
 
     (parsed.deletedItems||[]).forEach(t => {
       if(t && t.type && t.data && t.data.id){
@@ -662,6 +665,9 @@
     }else if(currentView === 'unique'){
       setActiveTab('tabUniqueBtn');
       document.getElementById('uniqueView').style.display='block';
+    }else if(currentView === 'creative-texts'){
+      setActiveTab('tabCreativeTextsBtn');
+      document.getElementById('creativeTextsView').style.display='flex';
     }else{
       // 'dashboard', or any old/unknown saved value — Dashboard is the safe default landing view
       currentView = 'dashboard';
@@ -4629,6 +4635,48 @@
     if(button.dataset.linkAction==='copy-params') copyBuilderText(linkBuilderParams(creative,row),'Параметры');
   });
 
+  // ---------- CREATIVE TEXT DOCS ----------
+  let activeTextDocId=null, activeTextVariationId=null, creativeTextSaveTimer=null;
+  function textDocById(id){ return (state.creativeTextDocs||[]).find(doc=>doc.id===id); }
+  function activeTextDoc(){ return textDocById(activeTextDocId) || (state.creativeTextDocs||[])[0] || null; }
+  function activeTextVariation(doc){ return doc && (doc.variations||[]).find(item=>item.id===activeTextVariationId) || (doc&&doc.variations||[])[0] || null; }
+  function renderCreativeTexts(){
+    const docs=state.creativeTextDocs||[];
+    const doc=activeTextDoc();
+    if(doc) activeTextDocId=doc.id;
+    const variation=activeTextVariation(doc);
+    if(variation) activeTextVariationId=variation.id;
+    document.getElementById('creativeTextDocList').innerHTML=docs.length ? docs.map(item=>`<button class="creative-text-doc ${item.id===activeTextDocId?'active':''}" data-text-doc-id="${item.id}" type="button"><span>▤</span>${escapeHtml(item.title||'Без названия')}</button>`).join('') : '<p class="creative-text-muted">Создай первый файл для текстов.</p>';
+    document.getElementById('creativeTextVariationList').innerHTML=doc ? (doc.variations||[]).map(item=>`<button class="creative-text-variation ${item.id===activeTextVariationId?'active':''}" data-text-variation-id="${item.id}" type="button">${escapeHtml(item.title||'Вариация')}</button>`).join('') : '';
+    const editor=document.getElementById('creativeTextEditor');
+    editor.innerHTML=variation ? `<input class="creative-text-title" data-text-edit="title" value="${escapeHtml(variation.title||'Вариация')}" aria-label="Название вариации"><textarea class="creative-text-body" data-text-edit="content" placeholder="Вставь сюда текст для крео…">${escapeHtml(variation.content||'')}</textarea><div class="creative-text-status">Сохраняется автоматически в базе</div>` : '<div class="creative-text-empty"><strong>Выбери или создай вариацию</strong><span>Внутри можно хранить отдельный текст для каждого варианта крео.</span></div>';
+  }
+  function createTextDocument(){
+    const doc={id:uid(),title:'Новый файл',variations:[{id:uid(),title:'Вариация 1',content:'',updatedAt:Date.now()}]};
+    state.creativeTextDocs.push(doc); activeTextDocId=doc.id; activeTextVariationId=doc.variations[0].id; saveState(true); renderCreativeTexts();
+  }
+  function createTextVariation(){
+    const doc=activeTextDoc(); if(!doc) return createTextDocument();
+    if(!Array.isArray(doc.variations)) doc.variations=[];
+    const item={id:uid(),title:`Вариация ${doc.variations.length+1}`,content:'',updatedAt:Date.now()};
+    doc.variations.push(item); activeTextVariationId=item.id; saveState(true); renderCreativeTexts();
+  }
+  document.getElementById('addCreativeTextDocBtn').addEventListener('click',createTextDocument);
+  document.getElementById('addCreativeTextVariationBtn').addEventListener('click',createTextVariation);
+  document.getElementById('creativeTextDocList').addEventListener('click',event=>{ const btn=event.target.closest('[data-text-doc-id]'); if(!btn) return; activeTextDocId=btn.dataset.textDocId; activeTextVariationId=null; renderCreativeTexts(); });
+  document.getElementById('creativeTextVariationList').addEventListener('click',event=>{ const btn=event.target.closest('[data-text-variation-id]'); if(!btn) return; activeTextVariationId=btn.dataset.textVariationId; renderCreativeTexts(); });
+  document.getElementById('creativeTextEditor').addEventListener('input',event=>{
+    const field=event.target.dataset.textEdit; if(!field) return;
+    const item=activeTextVariation(activeTextDoc()); if(!item) return;
+    item[field]=event.target.value; item.updatedAt=Date.now();
+    clearTimeout(creativeTextSaveTimer); creativeTextSaveTimer=setTimeout(()=>saveState(true),450);
+  });
+  document.getElementById('creativeTextEditor').addEventListener('change',event=>{
+    if(!event.target.dataset.textEdit) return;
+    clearTimeout(creativeTextSaveTimer); saveState(true);
+    if(event.target.dataset.textEdit==='title') renderCreativeTexts();
+  });
+
   // ---------- VIEW SWITCH ----------
   function render(){
     try{
@@ -4638,6 +4686,7 @@
       else if(currentView === 'board'){ renderBoard(); }
       else if(currentView === 'notes'){ renderNotesBoard(); }
       else if(currentView === 'unique'){ /* results are retained for this browser session */ }
+      else if(currentView === 'creative-texts'){ renderCreativeTexts(); }
       else if(currentView === 'fanpage'){ renderFanpageTable(); }
       else if(currentView === 'table'){ renderTable(); }
     }catch(e){
@@ -4647,7 +4696,7 @@
   }
 
   function setActiveTab(id){
-    ['tabDashboardBtn','tabReportBtn','tabTasksBtn','tabNotesBtn','tabUniqueBtn'].forEach(btnId=>{
+    ['tabDashboardBtn','tabReportBtn','tabTasksBtn','tabNotesBtn','tabUniqueBtn','tabCreativeTextsBtn'].forEach(btnId=>{
       document.getElementById(btnId).classList.toggle('active', btnId===id);
     });
   }
@@ -4659,6 +4708,7 @@
     document.getElementById('tasksView').style.display='none';
     document.getElementById('uniqueView').style.display='none';
     document.getElementById('linkBuilderView').style.display='none';
+    document.getElementById('creativeTextsView').style.display='none';
   }
   function switchToReportView(){
     currentView = 'report';
@@ -4695,11 +4745,18 @@
     saveViewState();
     render();
   }
+  function switchToCreativeTextsView(){
+    currentView='creative-texts';
+    setActiveTab('tabCreativeTextsBtn');
+    hideAllViews(); document.getElementById('creativeTextsView').style.display='flex';
+    saveViewState(); render();
+  }
   document.getElementById('tabReportBtn').addEventListener('click', switchToReportView);
   document.getElementById('tabDashboardBtn').addEventListener('click', switchToDashboardView);
   document.getElementById('tabTasksBtn').addEventListener('click', switchToTasksView);
   document.getElementById('tabNotesBtn').addEventListener('click', switchToNotesView);
   document.getElementById('tabUniqueBtn').addEventListener('click', switchToUniqueView);
+  document.getElementById('tabCreativeTextsBtn').addEventListener('click', switchToCreativeTextsView);
 
   function showErrorBanner(message){
     let banner = document.getElementById('errorBanner');
