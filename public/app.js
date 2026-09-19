@@ -4640,6 +4640,9 @@
   function textDocById(id){ return (state.creativeTextDocs||[]).find(doc=>doc.id===id); }
   function activeTextDoc(){ return textDocById(activeTextDocId) || (state.creativeTextDocs||[])[0] || null; }
   function activeTextVariation(doc){ return doc && (doc.variations||[]).find(item=>item.id===activeTextVariationId) || (doc&&doc.variations||[])[0] || null; }
+  function variationTreeHtml(items,parentId='',depth=0){
+    return items.filter(item=>String(item.parentId||'')===parentId).map(item=>`<div class="creative-text-tree-node" style="--tree-depth:${depth}"><button class="creative-text-variation ${item.id===activeTextVariationId?'active':''}" data-text-variation-id="${item.id}" type="button"><span class="creative-text-tree-icon">▤</span>${escapeHtml(item.title||'Вариация')}</button><button class="creative-text-variation-delete" data-text-action="delete-variation" data-text-variation-id="${item.id}" type="button" title="Удалить вариацию">×</button></div>${variationTreeHtml(items,item.id,depth+1)}`).join('');
+  }
   function renderCreativeTexts(){
     const docs=state.creativeTextDocs||[];
     const doc=activeTextDoc();
@@ -4651,10 +4654,11 @@
     docTitle.disabled=!doc;
     document.getElementById('deleteCreativeTextDocBtn').disabled=!doc;
     document.getElementById('addCreativeTextVariationBtn').disabled=!doc;
+    document.getElementById('addCreativeTextChildBtn').disabled=!variation;
     document.getElementById('creativeTextLibrary').style.display=creativeTextMode==='library'?'block':'none';
     document.getElementById('creativeTextWorkspace').style.display=creativeTextMode==='editor'&&doc?'block':'none';
     document.getElementById('creativeTextDocList').innerHTML=docs.length ? docs.map(item=>`<button class="creative-text-doc ${item.id===activeTextDocId?'active':''}" data-text-doc-id="${item.id}" type="button"><span>▤</span>${escapeHtml(item.title||'Без названия')}</button>`).join('') : '<p class="creative-text-muted">Создай первый файл для текстов.</p>';
-    document.getElementById('creativeTextVariationList').innerHTML=doc ? (doc.variations||[]).map(item=>`<div class="creative-text-variation-wrap"><button class="creative-text-variation ${item.id===activeTextVariationId?'active':''}" data-text-variation-id="${item.id}" type="button">${escapeHtml(item.title||'Вариация')}</button><button class="creative-text-variation-delete" data-text-action="delete-variation" data-text-variation-id="${item.id}" type="button" title="Удалить вариацию">×</button></div>`).join('') : '';
+    document.getElementById('creativeTextVariationList').innerHTML=doc ? `<div class="creative-text-tree-title">Вариации</div>${variationTreeHtml(doc.variations||[])||'<p class="creative-text-muted">Добавь первую вариацию.</p>'}` : '';
     const editor=document.getElementById('creativeTextEditor');
     editor.innerHTML=variation ? `<input class="creative-text-title" data-text-edit="title" value="${escapeHtml(variation.title||'Вариация')}" aria-label="Название вариации"><textarea class="creative-text-body" data-text-edit="content" placeholder="Вставь сюда текст для крео…">${escapeHtml(variation.content||'')}</textarea><div class="creative-text-status">Сохраняется автоматически в базе</div>` : '<div class="creative-text-empty"><strong>Выбери или создай вариацию</strong><span>Внутри можно хранить отдельный текст для каждого варианта крео.</span></div>';
   }
@@ -4668,12 +4672,19 @@
   function createTextVariation(){
     const doc=activeTextDoc(); if(!doc) return createTextDocument();
     if(!Array.isArray(doc.variations)) doc.variations=[];
-    const item={id:uid(),title:`Вариация ${doc.variations.length+1}`,content:'',updatedAt:Date.now()};
+    const item={id:uid(),title:`Вариация ${doc.variations.length+1}`,content:'',parentId:'',updatedAt:Date.now()};
+    doc.variations.push(item); activeTextVariationId=item.id; saveState(true); renderCreativeTexts();
+  }
+  function createTextChildVariation(){
+    const doc=activeTextDoc(), parent=activeTextVariation(doc); if(!doc || !parent) return;
+    if(!Array.isArray(doc.variations)) doc.variations=[];
+    const item={id:uid(),title:`Подвариация ${doc.variations.filter(entry=>entry.parentId===parent.id).length+1}`,content:'',parentId:parent.id,updatedAt:Date.now()};
     doc.variations.push(item); activeTextVariationId=item.id; saveState(true); renderCreativeTexts();
   }
   document.getElementById('addCreativeTextDocBtn').addEventListener('click',createTextDocument);
   document.getElementById('newCreativeTextDocName').addEventListener('keydown',event=>{ if(event.key==='Enter') createTextDocument(); });
   document.getElementById('addCreativeTextVariationBtn').addEventListener('click',createTextVariation);
+  document.getElementById('addCreativeTextChildBtn').addEventListener('click',createTextChildVariation);
   document.getElementById('backToCreativeTextLibraryBtn').addEventListener('click',()=>{ creativeTextMode='library'; renderCreativeTexts(); });
   document.getElementById('creativeTextDocTitle').addEventListener('change',event=>{
     const doc=activeTextDoc(); if(!doc) return;
@@ -4690,7 +4701,10 @@
     if(btn.dataset.textAction==='delete-variation'){
       const item=(doc.variations||[]).find(entry=>entry.id===btn.dataset.textVariationId);
       if(!item || !confirm(`Удалить «${item.title||'Вариация'}»?`)) return;
-      doc.variations=doc.variations.filter(entry=>entry.id!==item.id); activeTextVariationId=null; saveState(true); renderCreativeTexts(); return;
+      const removeIds=new Set([item.id]);
+      let changed=true;
+      while(changed){ changed=false; doc.variations.forEach(entry=>{ if(removeIds.has(entry.parentId) && !removeIds.has(entry.id)){ removeIds.add(entry.id); changed=true; } }); }
+      doc.variations=doc.variations.filter(entry=>!removeIds.has(entry.id)); activeTextVariationId=null; saveState(true); renderCreativeTexts(); return;
     }
     activeTextVariationId=btn.dataset.textVariationId; renderCreativeTexts();
   });
