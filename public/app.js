@@ -4646,8 +4646,13 @@
     if(doc) activeTextDocId=doc.id;
     const variation=activeTextVariation(doc);
     if(variation) activeTextVariationId=variation.id;
+    const docTitle=document.getElementById('creativeTextDocTitle');
+    docTitle.value=doc ? (doc.title||'Без названия') : '';
+    docTitle.disabled=!doc;
+    document.getElementById('deleteCreativeTextDocBtn').disabled=!doc;
+    document.getElementById('addCreativeTextVariationBtn').disabled=!doc;
     document.getElementById('creativeTextDocList').innerHTML=docs.length ? docs.map(item=>`<button class="creative-text-doc ${item.id===activeTextDocId?'active':''}" data-text-doc-id="${item.id}" type="button"><span>▤</span>${escapeHtml(item.title||'Без названия')}</button>`).join('') : '<p class="creative-text-muted">Создай первый файл для текстов.</p>';
-    document.getElementById('creativeTextVariationList').innerHTML=doc ? (doc.variations||[]).map(item=>`<button class="creative-text-variation ${item.id===activeTextVariationId?'active':''}" data-text-variation-id="${item.id}" type="button">${escapeHtml(item.title||'Вариация')}</button>`).join('') : '';
+    document.getElementById('creativeTextVariationList').innerHTML=doc ? (doc.variations||[]).map(item=>`<div class="creative-text-variation-wrap"><button class="creative-text-variation ${item.id===activeTextVariationId?'active':''}" data-text-variation-id="${item.id}" type="button">${escapeHtml(item.title||'Вариация')}</button><button class="creative-text-variation-delete" data-text-action="delete-variation" data-text-variation-id="${item.id}" type="button" title="Удалить вариацию">×</button></div>`).join('') : '';
     const editor=document.getElementById('creativeTextEditor');
     editor.innerHTML=variation ? `<input class="creative-text-title" data-text-edit="title" value="${escapeHtml(variation.title||'Вариация')}" aria-label="Название вариации"><textarea class="creative-text-body" data-text-edit="content" placeholder="Вставь сюда текст для крео…">${escapeHtml(variation.content||'')}</textarea><div class="creative-text-status">Сохраняется автоматически в базе</div>` : '<div class="creative-text-empty"><strong>Выбери или создай вариацию</strong><span>Внутри можно хранить отдельный текст для каждого варианта крео.</span></div>';
   }
@@ -4663,8 +4668,25 @@
   }
   document.getElementById('addCreativeTextDocBtn').addEventListener('click',createTextDocument);
   document.getElementById('addCreativeTextVariationBtn').addEventListener('click',createTextVariation);
+  document.getElementById('creativeTextDocTitle').addEventListener('change',event=>{
+    const doc=activeTextDoc(); if(!doc) return;
+    doc.title=event.target.value.trim()||'Без названия'; saveState(true); renderCreativeTexts();
+  });
+  document.getElementById('deleteCreativeTextDocBtn').addEventListener('click',()=>{
+    const doc=activeTextDoc(); if(!doc || !confirm(`Удалить файл «${doc.title||'Без названия'}» вместе со всеми вариациями?`)) return;
+    state.creativeTextDocs=state.creativeTextDocs.filter(item=>item.id!==doc.id); activeTextDocId=null; activeTextVariationId=null; saveState(true); renderCreativeTexts();
+  });
   document.getElementById('creativeTextDocList').addEventListener('click',event=>{ const btn=event.target.closest('[data-text-doc-id]'); if(!btn) return; activeTextDocId=btn.dataset.textDocId; activeTextVariationId=null; renderCreativeTexts(); });
-  document.getElementById('creativeTextVariationList').addEventListener('click',event=>{ const btn=event.target.closest('[data-text-variation-id]'); if(!btn) return; activeTextVariationId=btn.dataset.textVariationId; renderCreativeTexts(); });
+  document.getElementById('creativeTextVariationList').addEventListener('click',event=>{
+    const btn=event.target.closest('[data-text-variation-id]'); if(!btn) return;
+    const doc=activeTextDoc(); if(!doc) return;
+    if(btn.dataset.textAction==='delete-variation'){
+      const item=(doc.variations||[]).find(entry=>entry.id===btn.dataset.textVariationId);
+      if(!item || !confirm(`Удалить «${item.title||'Вариация'}»?`)) return;
+      doc.variations=doc.variations.filter(entry=>entry.id!==item.id); activeTextVariationId=null; saveState(true); renderCreativeTexts(); return;
+    }
+    activeTextVariationId=btn.dataset.textVariationId; renderCreativeTexts();
+  });
   document.getElementById('creativeTextEditor').addEventListener('input',event=>{
     const field=event.target.dataset.textEdit; if(!field) return;
     const item=activeTextVariation(activeTextDoc()); if(!item) return;
