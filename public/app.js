@@ -4527,11 +4527,21 @@
   uniqueUi.downloadAll.addEventListener('click',()=>uniqueUi.results.forEach((item,index)=>setTimeout(()=>{const link=document.createElement('a');link.href=item.url;link.download=item.name;link.click();},index*140)));
 
   // ---------- LINK BUILDER ----------
+  function linkBuilderCode(creative){
+    const value=String(creative.code||'').trim();
+    return /^\d{4}$/.test(value) ? value : '0000';
+  }
+  function newLinkBuilderCode(){
+    const used=new Set((state.linkBuilders||[]).map(linkBuilderCode));
+    let code;
+    do { code=String(Math.floor(1000+Math.random()*9000)); } while(used.has(code));
+    return code;
+  }
   function linkBuilderSub1(creative,row){
-    const code=String(creative.name||'').trim().replace(/^NL_CBO/i,'').replace(/^CBO/i,'');
+    const code=linkBuilderCode(creative);
     const geo=String(row.geo||'').trim().toLowerCase().replace(/\s+/g,'-');
-    const prefix=String(row.prefix||'NL').trim().replace(/_+$/,'') || 'NL';
-    const variation=String(row.textVariation||'mobila_[story]').trim().replace(/^_+|_+$/g,'') || 'mobila_[story]';
+    const prefix=String(row.prefix||'BG').trim().replace(/_+$/,'') || 'BG';
+    const variation=String(creative.name||row.textVariation||'mobila').trim().replace(/^_+|_+$/g,'') || 'mobila';
     const tail=String(row.tail||'minon').trim().replace(/^_+|_+$/g,'') || 'minon';
     return `${prefix}_CBO${code}_${variation}_${geo}_${tail}_${row.date||todayStr()}`;
   }
@@ -4557,17 +4567,25 @@
   function getLinkCreative(id){ return (state.linkBuilders||[]).find(item=>item.id===id); }
   function renderLinkBuilder(){
     const wrap=document.getElementById('linkBuilderList');
+    let migrated=false;
+    (state.linkBuilders||[]).forEach(creative=>{
+      if(/^\d{4}$/.test(String(creative.code||'').trim())) return;
+      const legacyVariation=Array.isArray(creative.rows) ? creative.rows.find(row=>String(row.textVariation||'').trim())?.textVariation : '';
+      creative.code=newLinkBuilderCode();
+      if(legacyVariation) creative.name=legacyVariation;
+      migrated=true;
+    });
+    if(migrated) saveState(true);
     const creatives=(state.linkBuilders||[]).slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
     if(!creatives.length){ wrap.innerHTML='<div class="link-builder-card muted">Здесь появятся крео и готовые линки.</div>'; return; }
     wrap.innerHTML=creatives.map(creative=>{
       const rows=Array.isArray(creative.rows)?creative.rows:[];
       return `<section class="link-creative-card" data-creative-id="${creative.id}">
-        <div class="link-creative-head"><strong>Крео: ${escapeHtml(creative.name||'—')}</strong><button class="btn btn-ghost" type="button" data-link-action="add-row" data-creative-id="${creative.id}">+ GEO</button><button class="btn btn-danger" type="button" data-link-action="delete-creative" data-creative-id="${creative.id}">Удалить</button></div>
+        <div class="link-creative-head"><strong>Крео: ${escapeHtml(`BG_CBO${linkBuilderCode(creative)}_${creative.name||'mobila'}`)}</strong><button class="btn btn-ghost" type="button" data-link-action="add-row" data-creative-id="${creative.id}">+ GEO</button><button class="btn btn-danger" type="button" data-link-action="delete-creative" data-creative-id="${creative.id}">Удалить</button></div>
         ${rows.length?rows.map(row=>{
           const full=linkBuilderUrl(creative,row), sub1=linkBuilderSub1(creative,row), params=linkBuilderParams(creative,row);
           return `<div class="link-row" data-row-id="${row.id}"><div class="link-row-fields">
-            <div class="field"><label>Префикс</label><input data-link-field="prefix" value="${escapeHtml(row.prefix||'NL')}" placeholder="NL / EURO"></div>
-            <div class="field"><label>Текст / вариация</label><input data-link-field="textVariation" value="${escapeHtml(row.textVariation||'mobila_[story]')}" placeholder="urod[text2]_[story]"></div>
+            <div class="field"><label>Префикс</label><input data-link-field="prefix" value="${escapeHtml(row.prefix||'BG')}" placeholder="BG / EURO"></div>
             <div class="field"><label>GEO</label><input data-link-field="geo" value="${escapeHtml(row.geo||'')}" placeholder="NL"></div>
             <div class="field"><label>Хвост sub1</label><input data-link-field="tail" value="${escapeHtml(row.tail||'minon')}" placeholder="m1non_burmalda"></div>
             <div class="field"><label>Домен</label><input data-link-field="domain" value="${escapeHtml(row.domain||'')}" placeholder="zoneine.guru"></div>
@@ -4581,8 +4599,8 @@
   }
   function addLinkCreative(){
     const input=document.getElementById('linkCreativeName'); const name=input.value.trim();
-    if(!name){ showToast('Введи нейм крео'); input.focus(); return; }
-    state.linkBuilders.push({id:uid(),name,rows:[]}); input.value=''; saveState(true); renderLinkBuilder(); showToast('Крео создано');
+    if(!name){ showToast('Введи текст или вариацию'); input.focus(); return; }
+    state.linkBuilders.push({id:uid(),code:newLinkBuilderCode(),name,rows:[]}); input.value=''; saveState(true); renderLinkBuilder(); showToast('Крео создано');
   }
   document.getElementById('addLinkCreativeBtn').addEventListener('click',addLinkCreative);
   document.getElementById('linkCreativeName').addEventListener('keydown',event=>{if(event.key==='Enter') addLinkCreative();});
@@ -4596,7 +4614,7 @@
     const button=event.target.closest('[data-link-action]'); if(!button) return;
     const creative=getLinkCreative(button.dataset.creativeId); if(!creative) return;
     if(!Array.isArray(creative.rows)) creative.rows=[];
-    if(button.dataset.linkAction==='add-row'){ creative.rows.push({id:uid(),prefix:'NL',textVariation:'mobila_[story]',geo:'',tail:'minon',domain:'',pixel:'',date:todayStr()}); saveState(true); renderLinkBuilder(); return; }
+    if(button.dataset.linkAction==='add-row'){ creative.rows.push({id:uid(),prefix:'BG',geo:'',tail:'minon',domain:'',pixel:'',date:todayStr()}); saveState(true); renderLinkBuilder(); return; }
     if(button.dataset.linkAction==='delete-creative'){ state.linkBuilders=state.linkBuilders.filter(item=>item.id!==creative.id); saveState(true); renderLinkBuilder(); return; }
     const row=creative.rows.find(item=>item.id===button.dataset.rowId); if(!row) return;
     if(button.dataset.linkAction==='delete-row'){ creative.rows=creative.rows.filter(item=>item.id!==row.id); saveState(true); renderLinkBuilder(); return; }
