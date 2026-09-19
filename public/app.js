@@ -9,7 +9,7 @@
       return { naming: u.naming || '', url: u.url || '' };
     }).filter(u=>u.url).slice(0, MAX_URLS);
   }
-  let state = { layers: [], fanpages: [], creatives: [], links: [], fanpageRegistry: [], notes: [], noteLinks: [], launchPlans: [], reports: {}, deletedItems: [], currentLayerId: null };
+  let state = { layers: [], fanpages: [], creatives: [], links: [], fanpageRegistry: [], notes: [], noteLinks: [], launchPlans: [], linkBuilders: [], reports: {}, deletedItems: [], currentLayerId: null };
   const VIEW_STATE_KEY = 'adboard-view-state-v3';
   function loadViewState(){
     try{
@@ -393,6 +393,7 @@
     (state.notes||[]).forEach(x => push('note', x));
     (state.noteLinks||[]).forEach(x => push('noteLink', x));
     (state.launchPlans||[]).forEach(x => push('launchPlan', x));
+    (state.linkBuilders||[]).forEach(x => push('linkBuilder', x));
 
     const spendRev = (state.reports && state.reports.spendRev) || {};
     Object.keys(spendRev).forEach(monthKey => {
@@ -442,6 +443,7 @@
     state.notes = byType.note || [];
     state.noteLinks = byType.noteLink || [];
     state.launchPlans = byType.launchPlan || [];
+    state.linkBuilders = byType.linkBuilder || [];
 
     state.reports = {};
     state.reports.spendRev = {};
@@ -659,6 +661,9 @@
     }else if(currentView === 'unique'){
       setActiveTab('tabUniqueBtn');
       document.getElementById('uniqueView').style.display='block';
+    }else if(currentView === 'link-builder'){
+      setActiveTab('tabLinkBuilderBtn');
+      document.getElementById('linkBuilderView').style.display='block';
     }else{
       // 'dashboard', or any old/unknown saved value — Dashboard is the safe default landing view
       currentView = 'dashboard';
@@ -4512,6 +4517,79 @@
   uniqueUi.start.addEventListener('click',runUniquifier);
   uniqueUi.downloadAll.addEventListener('click',()=>uniqueUi.results.forEach((item,index)=>setTimeout(()=>{const link=document.createElement('a');link.href=item.url;link.download=item.name;link.click();},index*140)));
 
+  // ---------- LINK BUILDER ----------
+  function linkBuilderSub1(creative,row){
+    const code=String(creative.name||'').trim().replace(/^NL_CBO/i,'').replace(/^CBO/i,'');
+    const geo=String(row.geo||'').trim().toLowerCase().replace(/\s+/g,'-');
+    return `NL_CBO${code}_mobila_[story]_${geo}_minon_${row.date||todayStr()}`;
+  }
+  function linkBuilderParams(creative,row){
+    const sub1=linkBuilderSub1(creative,row);
+    return `sub1=${sub1}&sub2={{adset.name}}&sub3={{ad.name}}&sub4={{ad.id}}&sub5={{placement}}&sub6=extra_data&fbp=${String(row.pixel||'').trim()}`;
+  }
+  function linkBuilderUrl(creative,row){
+    let domain=String(row.domain||'').trim();
+    if(!domain) return '';
+    if(!/^https?:\/\//i.test(domain)) domain='https://'+domain;
+    domain=domain.replace(/[?&]+$/,'');
+    return domain+(domain.includes('?')?'&':'?')+linkBuilderParams(creative,row);
+  }
+  async function copyBuilderText(value,label){
+    if(!value) return showToast('Сначала заполни данные для линки');
+    try{ await navigator.clipboard.writeText(value); showToast(`${label} скопирован`); }
+    catch(e){
+      const input=document.createElement('textarea'); input.value=value; input.style.position='fixed'; input.style.opacity='0';
+      document.body.appendChild(input); input.select(); document.execCommand('copy'); input.remove(); showToast(`${label} скопирован`);
+    }
+  }
+  function getLinkCreative(id){ return (state.linkBuilders||[]).find(item=>item.id===id); }
+  function renderLinkBuilder(){
+    const wrap=document.getElementById('linkBuilderList');
+    const creatives=(state.linkBuilders||[]).slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+    if(!creatives.length){ wrap.innerHTML='<div class="link-builder-card muted">Здесь появятся крео и готовые линки.</div>'; return; }
+    wrap.innerHTML=creatives.map(creative=>{
+      const rows=Array.isArray(creative.rows)?creative.rows:[];
+      return `<section class="link-creative-card" data-creative-id="${creative.id}">
+        <div class="link-creative-head"><strong>Крео: ${escapeHtml(creative.name||'—')}</strong><button class="btn btn-ghost" type="button" data-link-action="add-row" data-creative-id="${creative.id}">+ GEO</button><button class="btn btn-danger" type="button" data-link-action="delete-creative" data-creative-id="${creative.id}">Удалить</button></div>
+        ${rows.length?rows.map(row=>{
+          const full=linkBuilderUrl(creative,row), sub1=linkBuilderSub1(creative,row), params=linkBuilderParams(creative,row);
+          return `<div class="link-row" data-row-id="${row.id}"><div class="link-row-fields">
+            <div class="field"><label>GEO</label><input data-link-field="geo" value="${escapeHtml(row.geo||'')}" placeholder="NL"></div>
+            <div class="field"><label>Домен</label><input data-link-field="domain" value="${escapeHtml(row.domain||'')}" placeholder="zoneine.guru"></div>
+            <div class="field"><label>Пиксель / fbp</label><input data-link-field="pixel" value="${escapeHtml(row.pixel||'')}" placeholder="1388935322813601"></div>
+            <div class="field"><label>Дата</label><input type="date" data-link-field="date" value="${escapeHtml(row.date||todayStr())}"></div>
+          </div><div class="link-output">${full?escapeHtml(full):'Заполни GEO, домен и пиксель — здесь появится готовая ссылка.'}</div>
+          <div class="link-copy-row"><button class="btn btn-ghost" type="button" data-link-action="copy-full" data-creative-id="${creative.id}" data-row-id="${row.id}">Копировать ссылку</button><button class="btn btn-ghost" type="button" data-link-action="copy-sub1" data-creative-id="${creative.id}" data-row-id="${row.id}">Копировать sub1</button><button class="btn btn-ghost" type="button" data-link-action="copy-params" data-creative-id="${creative.id}" data-row-id="${row.id}">Копировать параметры</button><button class="btn btn-danger" type="button" data-link-action="delete-row" data-creative-id="${creative.id}" data-row-id="${row.id}">×</button></div></div>`;
+        }).join(''):'<p class="muted" style="margin:12px 0 0">Добавь первый GEO для этого крео.</p>'}
+      </section>`;
+    }).join('');
+  }
+  function addLinkCreative(){
+    const input=document.getElementById('linkCreativeName'); const name=input.value.trim();
+    if(!name){ showToast('Введи нейм крео'); input.focus(); return; }
+    state.linkBuilders.push({id:uid(),name,rows:[]}); input.value=''; saveState(true); renderLinkBuilder(); showToast('Крео создано');
+  }
+  document.getElementById('addLinkCreativeBtn').addEventListener('click',addLinkCreative);
+  document.getElementById('linkCreativeName').addEventListener('keydown',event=>{if(event.key==='Enter') addLinkCreative();});
+  document.getElementById('linkBuilderList').addEventListener('change',event=>{
+    const input=event.target.closest('[data-link-field]'); if(!input) return;
+    const card=input.closest('[data-creative-id]'), rowEl=input.closest('[data-row-id]');
+    const creative=getLinkCreative(card?.dataset.creativeId), row=creative?.rows?.find(item=>item.id===rowEl?.dataset.rowId);
+    if(!row) return; row[input.dataset.linkField]=input.value.trim(); saveState(true); renderLinkBuilder();
+  });
+  document.getElementById('linkBuilderList').addEventListener('click',event=>{
+    const button=event.target.closest('[data-link-action]'); if(!button) return;
+    const creative=getLinkCreative(button.dataset.creativeId); if(!creative) return;
+    if(!Array.isArray(creative.rows)) creative.rows=[];
+    if(button.dataset.linkAction==='add-row'){ creative.rows.push({id:uid(),geo:'',domain:'',pixel:'',date:todayStr()}); saveState(true); renderLinkBuilder(); return; }
+    if(button.dataset.linkAction==='delete-creative'){ state.linkBuilders=state.linkBuilders.filter(item=>item.id!==creative.id); saveState(true); renderLinkBuilder(); return; }
+    const row=creative.rows.find(item=>item.id===button.dataset.rowId); if(!row) return;
+    if(button.dataset.linkAction==='delete-row'){ creative.rows=creative.rows.filter(item=>item.id!==row.id); saveState(true); renderLinkBuilder(); return; }
+    if(button.dataset.linkAction==='copy-full') copyBuilderText(linkBuilderUrl(creative,row),'Ссылка');
+    if(button.dataset.linkAction==='copy-sub1') copyBuilderText(linkBuilderSub1(creative,row),'sub1');
+    if(button.dataset.linkAction==='copy-params') copyBuilderText(linkBuilderParams(creative,row),'Параметры');
+  });
+
   // ---------- VIEW SWITCH ----------
   function render(){
     try{
@@ -4521,6 +4599,7 @@
       else if(currentView === 'board'){ renderBoard(); }
       else if(currentView === 'notes'){ renderNotesBoard(); }
       else if(currentView === 'unique'){ /* results are retained for this browser session */ }
+      else if(currentView === 'link-builder'){ renderLinkBuilder(); }
       else if(currentView === 'fanpage'){ renderFanpageTable(); }
       else if(currentView === 'table'){ renderTable(); }
     }catch(e){
@@ -4530,7 +4609,7 @@
   }
 
   function setActiveTab(id){
-    ['tabDashboardBtn','tabReportBtn','tabTasksBtn','tabNotesBtn','tabUniqueBtn'].forEach(btnId=>{
+    ['tabDashboardBtn','tabReportBtn','tabTasksBtn','tabNotesBtn','tabUniqueBtn','tabLinkBuilderBtn'].forEach(btnId=>{
       document.getElementById(btnId).classList.toggle('active', btnId===id);
     });
   }
@@ -4541,6 +4620,7 @@
     document.getElementById('dashboardView').style.display='none';
     document.getElementById('tasksView').style.display='none';
     document.getElementById('uniqueView').style.display='none';
+    document.getElementById('linkBuilderView').style.display='none';
   }
   function switchToReportView(){
     currentView = 'report';
@@ -4577,11 +4657,18 @@
     saveViewState();
     render();
   }
+  function switchToLinkBuilderView(){
+    currentView='link-builder';
+    setActiveTab('tabLinkBuilderBtn');
+    hideAllViews(); document.getElementById('linkBuilderView').style.display='block';
+    saveViewState(); renderLinkBuilder();
+  }
   document.getElementById('tabReportBtn').addEventListener('click', switchToReportView);
   document.getElementById('tabDashboardBtn').addEventListener('click', switchToDashboardView);
   document.getElementById('tabTasksBtn').addEventListener('click', switchToTasksView);
   document.getElementById('tabNotesBtn').addEventListener('click', switchToNotesView);
   document.getElementById('tabUniqueBtn').addEventListener('click', switchToUniqueView);
+  document.getElementById('tabLinkBuilderBtn').addEventListener('click', switchToLinkBuilderView);
 
   function showErrorBanner(message){
     let banner = document.getElementById('errorBanner');
