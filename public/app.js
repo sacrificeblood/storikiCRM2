@@ -4636,7 +4636,7 @@
   });
 
   // ---------- CREATIVE TEXT DOCS ----------
-  let activeTextDocId=null, activeTextVariationId=null, creativeTextSaveTimer=null;
+  let activeTextDocId=null, activeTextVariationId=null, creativeTextSaveTimer=null, creativeTextMode='library';
   function textDocById(id){ return (state.creativeTextDocs||[]).find(doc=>doc.id===id); }
   function activeTextDoc(){ return textDocById(activeTextDocId) || (state.creativeTextDocs||[])[0] || null; }
   function activeTextVariation(doc){ return doc && (doc.variations||[]).find(item=>item.id===activeTextVariationId) || (doc&&doc.variations||[])[0] || null; }
@@ -4651,14 +4651,19 @@
     docTitle.disabled=!doc;
     document.getElementById('deleteCreativeTextDocBtn').disabled=!doc;
     document.getElementById('addCreativeTextVariationBtn').disabled=!doc;
+    document.getElementById('creativeTextLibrary').style.display=creativeTextMode==='library'?'block':'none';
+    document.getElementById('creativeTextWorkspace').style.display=creativeTextMode==='editor'&&doc?'block':'none';
     document.getElementById('creativeTextDocList').innerHTML=docs.length ? docs.map(item=>`<button class="creative-text-doc ${item.id===activeTextDocId?'active':''}" data-text-doc-id="${item.id}" type="button"><span>▤</span>${escapeHtml(item.title||'Без названия')}</button>`).join('') : '<p class="creative-text-muted">Создай первый файл для текстов.</p>';
     document.getElementById('creativeTextVariationList').innerHTML=doc ? (doc.variations||[]).map(item=>`<div class="creative-text-variation-wrap"><button class="creative-text-variation ${item.id===activeTextVariationId?'active':''}" data-text-variation-id="${item.id}" type="button">${escapeHtml(item.title||'Вариация')}</button><button class="creative-text-variation-delete" data-text-action="delete-variation" data-text-variation-id="${item.id}" type="button" title="Удалить вариацию">×</button></div>`).join('') : '';
     const editor=document.getElementById('creativeTextEditor');
     editor.innerHTML=variation ? `<input class="creative-text-title" data-text-edit="title" value="${escapeHtml(variation.title||'Вариация')}" aria-label="Название вариации"><textarea class="creative-text-body" data-text-edit="content" placeholder="Вставь сюда текст для крео…">${escapeHtml(variation.content||'')}</textarea><div class="creative-text-status">Сохраняется автоматически в базе</div>` : '<div class="creative-text-empty"><strong>Выбери или создай вариацию</strong><span>Внутри можно хранить отдельный текст для каждого варианта крео.</span></div>';
   }
   function createTextDocument(){
-    const doc={id:uid(),title:'Новый файл',variations:[{id:uid(),title:'Вариация 1',content:'',updatedAt:Date.now()}]};
-    state.creativeTextDocs.push(doc); activeTextDocId=doc.id; activeTextVariationId=doc.variations[0].id; saveState(true); renderCreativeTexts();
+    const input=document.getElementById('newCreativeTextDocName');
+    const title=input.value.trim();
+    if(!title){ showToast('Сначала дай название файлу'); input.focus(); return; }
+    const doc={id:uid(),title,variations:[{id:uid(),title:'Вариация 1',content:'',updatedAt:Date.now()}]};
+    state.creativeTextDocs.push(doc); activeTextDocId=doc.id; activeTextVariationId=doc.variations[0].id; creativeTextMode='editor'; input.value=''; saveState(true); renderCreativeTexts();
   }
   function createTextVariation(){
     const doc=activeTextDoc(); if(!doc) return createTextDocument();
@@ -4667,16 +4672,18 @@
     doc.variations.push(item); activeTextVariationId=item.id; saveState(true); renderCreativeTexts();
   }
   document.getElementById('addCreativeTextDocBtn').addEventListener('click',createTextDocument);
+  document.getElementById('newCreativeTextDocName').addEventListener('keydown',event=>{ if(event.key==='Enter') createTextDocument(); });
   document.getElementById('addCreativeTextVariationBtn').addEventListener('click',createTextVariation);
+  document.getElementById('backToCreativeTextLibraryBtn').addEventListener('click',()=>{ creativeTextMode='library'; renderCreativeTexts(); });
   document.getElementById('creativeTextDocTitle').addEventListener('change',event=>{
     const doc=activeTextDoc(); if(!doc) return;
     doc.title=event.target.value.trim()||'Без названия'; saveState(true); renderCreativeTexts();
   });
   document.getElementById('deleteCreativeTextDocBtn').addEventListener('click',()=>{
     const doc=activeTextDoc(); if(!doc || !confirm(`Удалить файл «${doc.title||'Без названия'}» вместе со всеми вариациями?`)) return;
-    state.creativeTextDocs=state.creativeTextDocs.filter(item=>item.id!==doc.id); activeTextDocId=null; activeTextVariationId=null; saveState(true); renderCreativeTexts();
+    state.creativeTextDocs=state.creativeTextDocs.filter(item=>item.id!==doc.id); activeTextDocId=null; activeTextVariationId=null; creativeTextMode='library'; saveState(true); renderCreativeTexts();
   });
-  document.getElementById('creativeTextDocList').addEventListener('click',event=>{ const btn=event.target.closest('[data-text-doc-id]'); if(!btn) return; activeTextDocId=btn.dataset.textDocId; activeTextVariationId=null; renderCreativeTexts(); });
+  document.getElementById('creativeTextDocList').addEventListener('click',event=>{ const btn=event.target.closest('[data-text-doc-id]'); if(!btn) return; activeTextDocId=btn.dataset.textDocId; activeTextVariationId=null; creativeTextMode='editor'; renderCreativeTexts(); });
   document.getElementById('creativeTextVariationList').addEventListener('click',event=>{
     const btn=event.target.closest('[data-text-variation-id]'); if(!btn) return;
     const doc=activeTextDoc(); if(!doc) return;
@@ -4768,7 +4775,7 @@
     render();
   }
   function switchToCreativeTextsView(){
-    currentView='creative-texts';
+    currentView='creative-texts'; creativeTextMode='library';
     setActiveTab('tabCreativeTextsBtn');
     hideAllViews(); document.getElementById('creativeTextsView').style.display='flex';
     saveViewState(); render();
