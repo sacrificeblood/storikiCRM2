@@ -4530,7 +4530,10 @@
   function linkBuilderSub1(creative,row){
     const code=String(creative.name||'').trim().replace(/^NL_CBO/i,'').replace(/^CBO/i,'');
     const geo=String(row.geo||'').trim().toLowerCase().replace(/\s+/g,'-');
-    return `NL_CBO${code}_mobila_[story]_${geo}_minon_${row.date||todayStr()}`;
+    const prefix=String(row.prefix||'NL').trim().replace(/_+$/,'') || 'NL';
+    const variation=String(row.textVariation||'mobila_[story]').trim().replace(/^_+|_+$/g,'') || 'mobila_[story]';
+    const tail=String(row.tail||'minon').trim().replace(/^_+|_+$/g,'') || 'minon';
+    return `${prefix}_CBO${code}_${variation}_${geo}_${tail}_${row.date||todayStr()}`;
   }
   function linkBuilderParams(creative,row){
     const sub1=linkBuilderSub1(creative,row);
@@ -4563,7 +4566,10 @@
         ${rows.length?rows.map(row=>{
           const full=linkBuilderUrl(creative,row), sub1=linkBuilderSub1(creative,row), params=linkBuilderParams(creative,row);
           return `<div class="link-row" data-row-id="${row.id}"><div class="link-row-fields">
+            <div class="field"><label>Префикс</label><input data-link-field="prefix" value="${escapeHtml(row.prefix||'NL')}" placeholder="NL / EURO"></div>
+            <div class="field"><label>Текст / вариация</label><input data-link-field="textVariation" value="${escapeHtml(row.textVariation||'mobila_[story]')}" placeholder="urod[text2]_[story]"></div>
             <div class="field"><label>GEO</label><input data-link-field="geo" value="${escapeHtml(row.geo||'')}" placeholder="NL"></div>
+            <div class="field"><label>Хвост sub1</label><input data-link-field="tail" value="${escapeHtml(row.tail||'minon')}" placeholder="m1non_burmalda"></div>
             <div class="field"><label>Домен</label><input data-link-field="domain" value="${escapeHtml(row.domain||'')}" placeholder="zoneine.guru"></div>
             <div class="field"><label>Пиксель / fbp</label><input data-link-field="pixel" value="${escapeHtml(row.pixel||'')}" placeholder="1388935322813601"></div>
             <div class="field"><label>Дата</label><input type="date" data-link-field="date" value="${escapeHtml(row.date||todayStr())}"></div>
@@ -4590,7 +4596,7 @@
     const button=event.target.closest('[data-link-action]'); if(!button) return;
     const creative=getLinkCreative(button.dataset.creativeId); if(!creative) return;
     if(!Array.isArray(creative.rows)) creative.rows=[];
-    if(button.dataset.linkAction==='add-row'){ creative.rows.push({id:uid(),geo:'',domain:'',pixel:'',date:todayStr()}); saveState(true); renderLinkBuilder(); return; }
+    if(button.dataset.linkAction==='add-row'){ creative.rows.push({id:uid(),prefix:'NL',textVariation:'mobila_[story]',geo:'',tail:'minon',domain:'',pixel:'',date:todayStr()}); saveState(true); renderLinkBuilder(); return; }
     if(button.dataset.linkAction==='delete-creative'){ state.linkBuilders=state.linkBuilders.filter(item=>item.id!==creative.id); saveState(true); renderLinkBuilder(); return; }
     const row=creative.rows.find(item=>item.id===button.dataset.rowId); if(!row) return;
     if(button.dataset.linkAction==='delete-row'){ creative.rows=creative.rows.filter(item=>item.id!==row.id); saveState(true); renderLinkBuilder(); return; }
