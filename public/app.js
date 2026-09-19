@@ -29,6 +29,7 @@
   const savedView = loadViewState();
 
   let currentView = savedView && savedView.currentView ? savedView.currentView : 'dashboard';
+  if(currentView === 'link-builder') currentView = 'report';
   let dragging = null;
   let connecting = null;
 
@@ -661,9 +662,6 @@
     }else if(currentView === 'unique'){
       setActiveTab('tabUniqueBtn');
       document.getElementById('uniqueView').style.display='block';
-    }else if(currentView === 'link-builder'){
-      setActiveTab('tabLinkBuilderBtn');
-      document.getElementById('linkBuilderView').style.display='block';
     }else{
       // 'dashboard', or any old/unknown saved value — Dashboard is the safe default landing view
       currentView = 'dashboard';
@@ -1932,8 +1930,8 @@
   }
 
   // ---------- REPORT VIEW (Отчётность) ----------
-  const REPORT_SHEETS = ['spendRev', 'accs', 'creoChecker', 'campaign', 'geoCipher']; // more sheets get added here later, one at a time
-  let currentReportSheet = (savedView && savedView.currentReportSheet) ? savedView.currentReportSheet : 'spendRev';
+  const REPORT_SHEETS = ['spendRev', 'accs', 'creoChecker', 'campaign', 'geoCipher', 'linkBuilder']; // more sheets get added here later, one at a time
+  let currentReportSheet = (savedView && savedView.currentReportSheet) ? savedView.currentReportSheet : (savedView?.currentView==='link-builder' ? 'linkBuilder' : 'spendRev');
   let currentReportMonth = null; // 'YYYY-MM' — always defaults to today's month on load
 
   const MONTH_NAMES = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
@@ -1985,6 +1983,7 @@
     document.getElementById('creoView').style.display = 'none';
     document.getElementById('campaignView').style.display = 'none';
     document.getElementById('geoCipherView').style.display = 'none';
+    document.getElementById('linkBuilderView').style.display = 'none';
     document.getElementById('reportMonthBar').style.display = 'none';
     document.getElementById('reportTableWrap').style.display = 'none';
     if(currentReportSheet === 'accs'){
@@ -1999,6 +1998,9 @@
     }else if(currentReportSheet === 'geoCipher'){
       document.getElementById('geoCipherView').style.display = 'block';
       renderGeoCipherView();
+    }else if(currentReportSheet === 'linkBuilder'){
+      document.getElementById('linkBuilderView').style.display = 'block';
+      renderLinkBuilder();
     }else{
       document.getElementById('reportMonthBar').style.display = 'flex';
       document.getElementById('reportTableWrap').style.display = 'block';
@@ -2106,6 +2108,7 @@
     document.getElementById('sheetCreoBtn').classList.toggle('active', sheet==='creoChecker');
     document.getElementById('sheetCampaignBtn').classList.toggle('active', sheet==='campaign');
     document.getElementById('sheetGeoCipherBtn').classList.toggle('active', sheet==='geoCipher');
+    document.getElementById('sheetLinkBuilderBtn').classList.toggle('active', sheet==='linkBuilder');
   }
   document.getElementById('sheetSpendRevBtn').addEventListener('click', safe(()=>{
     currentReportSheet = 'spendRev';
@@ -2134,6 +2137,12 @@
   document.getElementById('sheetGeoCipherBtn').addEventListener('click', safe(()=>{
     currentReportSheet = 'geoCipher';
     setActiveSheetTab('geoCipher');
+    saveViewState();
+    renderReportView();
+  }));
+  document.getElementById('sheetLinkBuilderBtn').addEventListener('click', safe(()=>{
+    currentReportSheet = 'linkBuilder';
+    setActiveSheetTab('linkBuilder');
     saveViewState();
     renderReportView();
   }));
@@ -4599,7 +4608,6 @@
       else if(currentView === 'board'){ renderBoard(); }
       else if(currentView === 'notes'){ renderNotesBoard(); }
       else if(currentView === 'unique'){ /* results are retained for this browser session */ }
-      else if(currentView === 'link-builder'){ renderLinkBuilder(); }
       else if(currentView === 'fanpage'){ renderFanpageTable(); }
       else if(currentView === 'table'){ renderTable(); }
     }catch(e){
@@ -4609,7 +4617,7 @@
   }
 
   function setActiveTab(id){
-    ['tabDashboardBtn','tabReportBtn','tabTasksBtn','tabNotesBtn','tabUniqueBtn','tabLinkBuilderBtn'].forEach(btnId=>{
+    ['tabDashboardBtn','tabReportBtn','tabTasksBtn','tabNotesBtn','tabUniqueBtn'].forEach(btnId=>{
       document.getElementById(btnId).classList.toggle('active', btnId===id);
     });
   }
@@ -4657,18 +4665,11 @@
     saveViewState();
     render();
   }
-  function switchToLinkBuilderView(){
-    currentView='link-builder';
-    setActiveTab('tabLinkBuilderBtn');
-    hideAllViews(); document.getElementById('linkBuilderView').style.display='block';
-    saveViewState(); renderLinkBuilder();
-  }
   document.getElementById('tabReportBtn').addEventListener('click', switchToReportView);
   document.getElementById('tabDashboardBtn').addEventListener('click', switchToDashboardView);
   document.getElementById('tabTasksBtn').addEventListener('click', switchToTasksView);
   document.getElementById('tabNotesBtn').addEventListener('click', switchToNotesView);
   document.getElementById('tabUniqueBtn').addEventListener('click', switchToUniqueView);
-  document.getElementById('tabLinkBuilderBtn').addEventListener('click', switchToLinkBuilderView);
 
   function showErrorBanner(message){
     let banner = document.getElementById('errorBanner');
