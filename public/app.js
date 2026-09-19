@@ -4581,7 +4581,7 @@
     wrap.innerHTML=creatives.map(creative=>{
       const rows=Array.isArray(creative.rows)?creative.rows:[];
       return `<section class="link-creative-card" data-creative-id="${creative.id}">
-        <div class="link-creative-head"><strong>Крео: ${escapeHtml(`BG_CBO${linkBuilderCode(creative)}_${creative.name||'mobila'}`)}</strong><button class="btn btn-ghost" type="button" data-link-action="add-row" data-creative-id="${creative.id}">+ GEO</button><button class="btn btn-danger" type="button" data-link-action="delete-creative" data-creative-id="${creative.id}">Удалить</button></div>
+        <div class="link-creative-head"><strong>Крео: BG_CBO${escapeHtml(linkBuilderCode(creative))}_</strong><div class="field link-creative-variation"><label>Текст / вариация</label><input data-link-creative-field="name" value="${escapeHtml(creative.name||'mobila')}" placeholder="mobila{text1}"></div><button class="btn btn-ghost" type="button" data-link-action="add-row" data-creative-id="${creative.id}">+ GEO</button><button class="btn btn-danger" type="button" data-link-action="delete-creative" data-creative-id="${creative.id}">Удалить</button></div>
         ${rows.length?rows.map(row=>{
           const full=linkBuilderUrl(creative,row), sub1=linkBuilderSub1(creative,row), params=linkBuilderParams(creative,row);
           return `<div class="link-row" data-row-id="${row.id}"><div class="link-row-fields">
@@ -4605,6 +4605,12 @@
   document.getElementById('addLinkCreativeBtn').addEventListener('click',addLinkCreative);
   document.getElementById('linkCreativeName').addEventListener('keydown',event=>{if(event.key==='Enter') addLinkCreative();});
   document.getElementById('linkBuilderList').addEventListener('change',event=>{
+    const creativeInput=event.target.closest('[data-link-creative-field]');
+    if(creativeInput){
+      const creative=getLinkCreative(creativeInput.closest('[data-creative-id]')?.dataset.creativeId);
+      if(!creative) return;
+      creative[creativeInput.dataset.linkCreativeField]=creativeInput.value.trim()||'mobila'; saveState(true); renderLinkBuilder(); return;
+    }
     const input=event.target.closest('[data-link-field]'); if(!input) return;
     const card=input.closest('[data-creative-id]'), rowEl=input.closest('[data-row-id]');
     const creative=getLinkCreative(card?.dataset.creativeId), row=creative?.rows?.find(item=>item.id===rowEl?.dataset.rowId);
