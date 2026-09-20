@@ -668,6 +668,9 @@
     }else if(currentView === 'creative-texts'){
       setActiveTab('tabCreativeTextsBtn');
       document.getElementById('creativeTextsView').style.display='flex';
+    }else if(currentView === 'meta-report'){
+      setActiveTab('tabMetaReportBtn');
+      document.getElementById('metaReportView').style.display='block';
     }else{
       // 'dashboard', or any old/unknown saved value — Dashboard is the safe default landing view
       currentView = 'dashboard';
@@ -4635,6 +4638,40 @@
     if(button.dataset.linkAction==='copy-params') copyBuilderText(linkBuilderParams(creative,row),'Параметры');
   });
 
+  // ---------- META REPORT GENERATOR ----------
+  const META_REPORT_COLUMNS=['campaign_name','adset_name','ad_name','account_id','spend','ctr','cpm','actions:link_click','actions:lead','actions:omni_purchase','actions:omni_complete_registration','clicks','cpc'];
+  const META_REPORT_BREAKDOWNS=['campaign_name','adset_name','ad_name','account_id'];
+  let generatedMetaReportUrl='';
+  function metaId(value){ return String(value||'').trim().replace(/^act_/i,'').replace(/\s+/g,''); }
+  function buildMetaReportUrl(adAccountId,businessManagerId){
+    const query=new URLSearchParams({
+      act:adAccountId,
+      business_id:businessManagerId,
+      global_scope_id:businessManagerId,
+      columns:META_REPORT_COLUMNS.join(','),
+      breakdowns:META_REPORT_BREAKDOWNS.join(','),
+      table_type:'table',
+      level:'ad',
+      date:'maximum',
+      sort_data:JSON.stringify({sort:'spend',direction:'desc'}),
+      filter_set:JSON.stringify({filters:[{field:'delivery_info',operator:'IN',value:['ACTIVE','PAUSED','COMPLETED']}]}),
+      insights:'1'
+    });
+    return `https://business.facebook.com/adsmanager/reporting/manage?${query.toString()}`;
+  }
+  function generateMetaReport(){
+    const adAccountId=metaId(document.getElementById('metaAdAccountId').value);
+    const businessManagerId=metaId(document.getElementById('metaBusinessManagerId').value);
+    if(!adAccountId || !businessManagerId){ showToast('Заполни Ad Account ID и Business Manager ID'); return; }
+    generatedMetaReportUrl=buildMetaReportUrl(adAccountId,businessManagerId);
+    document.getElementById('metaReportLink').textContent=generatedMetaReportUrl;
+    document.getElementById('metaReportResult').hidden=false;
+  }
+  document.getElementById('generateMetaReportBtn').addEventListener('click',generateMetaReport);
+  ['metaAdAccountId','metaBusinessManagerId'].forEach(id=>document.getElementById(id).addEventListener('keydown',event=>{ if(event.key==='Enter') generateMetaReport(); }));
+  document.getElementById('copyMetaReportBtn').addEventListener('click',()=>copyBuilderText(generatedMetaReportUrl,'Ссылка'));
+  document.getElementById('openMetaReportBtn').addEventListener('click',()=>{ if(!generatedMetaReportUrl) return; window.open(generatedMetaReportUrl,'_blank','noopener'); });
+
   // ---------- CREATIVE TEXT DOCS ----------
   let activeTextDocId=null, activeTextVariationId=null, creativeTextSaveTimer=null, creativeTextMode='library';
   function textDocById(id){ return (state.creativeTextDocs||[]).find(doc=>doc.id===id); }
@@ -4730,6 +4767,7 @@
       else if(currentView === 'notes'){ renderNotesBoard(); }
       else if(currentView === 'unique'){ /* results are retained for this browser session */ }
       else if(currentView === 'creative-texts'){ renderCreativeTexts(); }
+      else if(currentView === 'meta-report'){ /* generator keeps its current result */ }
       else if(currentView === 'fanpage'){ renderFanpageTable(); }
       else if(currentView === 'table'){ renderTable(); }
     }catch(e){
@@ -4739,7 +4777,7 @@
   }
 
   function setActiveTab(id){
-    ['tabDashboardBtn','tabReportBtn','tabTasksBtn','tabNotesBtn','tabUniqueBtn','tabCreativeTextsBtn'].forEach(btnId=>{
+    ['tabDashboardBtn','tabReportBtn','tabTasksBtn','tabNotesBtn','tabUniqueBtn','tabCreativeTextsBtn','tabMetaReportBtn'].forEach(btnId=>{
       document.getElementById(btnId).classList.toggle('active', btnId===id);
     });
   }
@@ -4752,6 +4790,7 @@
     document.getElementById('uniqueView').style.display='none';
     document.getElementById('linkBuilderView').style.display='none';
     document.getElementById('creativeTextsView').style.display='none';
+    document.getElementById('metaReportView').style.display='none';
   }
   function switchToReportView(){
     currentView = 'report';
@@ -4794,12 +4833,19 @@
     hideAllViews(); document.getElementById('creativeTextsView').style.display='flex';
     saveViewState(); render();
   }
+  function switchToMetaReportView(){
+    currentView='meta-report';
+    setActiveTab('tabMetaReportBtn');
+    hideAllViews(); document.getElementById('metaReportView').style.display='block';
+    saveViewState(); render();
+  }
   document.getElementById('tabReportBtn').addEventListener('click', switchToReportView);
   document.getElementById('tabDashboardBtn').addEventListener('click', switchToDashboardView);
   document.getElementById('tabTasksBtn').addEventListener('click', switchToTasksView);
   document.getElementById('tabNotesBtn').addEventListener('click', switchToNotesView);
   document.getElementById('tabUniqueBtn').addEventListener('click', switchToUniqueView);
   document.getElementById('tabCreativeTextsBtn').addEventListener('click', switchToCreativeTextsView);
+  document.getElementById('tabMetaReportBtn').addEventListener('click', switchToMetaReportView);
 
   function showErrorBanner(message){
     let banner = document.getElementById('errorBanner');
