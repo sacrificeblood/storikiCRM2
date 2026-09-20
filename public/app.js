@@ -4639,25 +4639,13 @@
   });
 
   // ---------- META REPORT GENERATOR ----------
-  const META_REPORT_COLUMNS=['campaign_name','adset_name','ad_name','account_id','spend','ctr','cpm','actions:link_click','actions:lead','actions:omni_purchase','actions:omni_complete_registration','clicks','cpc'];
-  const META_REPORT_BREAKDOWNS=['campaign_name','adset_name','ad_name','account_id'];
+  const META_REPORT_URL_TEMPLATE='https://adsmanager.facebook.com/adsmanager/reporting/business_view?act={AD_ACCOUNT_ID}&ads_manager_write_regions=true&business_id={BUSINESS_ID}&global_scope_id={BUSINESS_ID}&breakdowns=campaign_name%2Cadset_name%2Cad_name%2Caccount_id&default_attribution_windows=&empty_comparison_time_range=true&filter_set=had_delivery-STRING%1EEQUAL%1E%221%22&limit=50&locked_dimensions=1&metrics=spend%2Cctr%2Ccpm%2Cactions%3Alink_click%2Cactions%3Alead%2Cactions%3Aomni_purchase%2Cactions%3Aomni_complete_registration%2Cclicks%2Ccpc&report_name=&sort_spec=spend~desc&target_currency=USD&view_type=TABLE';
   let generatedMetaReportUrl='';
-  function metaId(value){ return String(value||'').trim().replace(/^act_/i,'').replace(/\s+/g,''); }
+  function metaId(value){ return String(value||'').trim(); }
   function buildMetaReportUrl(adAccountId,businessManagerId){
-    const query=new URLSearchParams({
-      act:adAccountId,
-      business_id:businessManagerId,
-      global_scope_id:businessManagerId,
-      columns:META_REPORT_COLUMNS.join(','),
-      breakdowns:META_REPORT_BREAKDOWNS.join(','),
-      table_type:'table',
-      level:'ad',
-      date:'maximum',
-      sort_data:JSON.stringify({sort:'spend',direction:'desc'}),
-      filter_set:JSON.stringify({filters:[{field:'delivery_info',operator:'IN',value:['ACTIVE','PAUSED','COMPLETED']}]}),
-      insights:'1'
-    });
-    return `https://business.facebook.com/adsmanager/reporting/manage?${query.toString()}`;
+    return META_REPORT_URL_TEMPLATE
+      .replaceAll('{AD_ACCOUNT_ID}',adAccountId)
+      .replaceAll('{BUSINESS_ID}',businessManagerId);
   }
   function generateMetaReport(){
     const adAccountId=metaId(document.getElementById('metaAdAccountId').value);
@@ -4665,12 +4653,13 @@
     if(!adAccountId || !businessManagerId){ showToast('Заполни Ad Account ID и Business Manager ID'); return; }
     generatedMetaReportUrl=buildMetaReportUrl(adAccountId,businessManagerId);
     document.getElementById('metaReportLink').textContent=generatedMetaReportUrl;
+    document.getElementById('metaReportDebug').textContent=generatedMetaReportUrl;
     document.getElementById('metaReportResult').hidden=false;
   }
   document.getElementById('generateMetaReportBtn').addEventListener('click',generateMetaReport);
   ['metaAdAccountId','metaBusinessManagerId'].forEach(id=>document.getElementById(id).addEventListener('keydown',event=>{ if(event.key==='Enter') generateMetaReport(); }));
   document.getElementById('copyMetaReportBtn').addEventListener('click',()=>copyBuilderText(generatedMetaReportUrl,'Ссылка'));
-  document.getElementById('openMetaReportBtn').addEventListener('click',()=>{ if(!generatedMetaReportUrl) return; window.open(generatedMetaReportUrl,'_blank','noopener'); });
+  document.getElementById('openMetaReportBtn').addEventListener('click',()=>{ if(!generatedMetaReportUrl) return; window.open(generatedMetaReportUrl,'_blank','noopener,noreferrer'); });
 
   // ---------- CREATIVE TEXT DOCS ----------
   let activeTextDocId=null, activeTextVariationId=null, creativeTextSaveTimer=null, creativeTextMode='library';
