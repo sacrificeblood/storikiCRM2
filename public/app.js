@@ -159,6 +159,19 @@
     notesCanvas.style.transform = `translate(${notesPanX}px, ${notesPanY}px) scale(${notesZoom})`;
     document.getElementById('notesZoomPct').textContent = Math.round(notesZoom * 100) + '%';
   }
+  function focusAllNotes(){
+    const notes=state.notes||[];
+    if(!notes.length){ notesZoom=1; notesPanX=42; notesPanY=36; applyNotesTransform(); return; }
+    const rect=notesView.getBoundingClientRect();
+    const left=Math.min(...notes.map(note=>Number(note.x)||0));
+    const top=Math.min(...notes.map(note=>Number(note.y)||0));
+    const right=Math.max(...notes.map(note=>(Number(note.x)||0)+240));
+    const bottom=Math.max(...notes.map(note=>(Number(note.y)||0)+118));
+    notesZoom=clamp(Math.min((rect.width-96)/Math.max(1,right-left),(rect.height-96)/Math.max(1,bottom-top),1),.3,1);
+    notesPanX=(rect.width-(right-left)*notesZoom)/2-left*notesZoom;
+    notesPanY=(rect.height-(bottom-top)*notesZoom)/2-top*notesZoom;
+    applyNotesTransform();
+  }
   function noteAnchors(from, to){
     const fw=240, fh=118, tw=240, th=118;
     const fc={x:(from.x||0)+fw/2,y:(from.y||0)+fh/2}, tc={x:(to.x||0)+tw/2,y:(to.y||0)+th/2};
@@ -307,6 +320,7 @@
   document.getElementById('notesZoomInBtn').addEventListener('click',()=>{notesZoom=clamp(notesZoom*1.25,.3,2.5);applyNotesTransform();});
   document.getElementById('notesZoomOutBtn').addEventListener('click',()=>{notesZoom=clamp(notesZoom*.8,.3,2.5);applyNotesTransform();});
   document.getElementById('notesZoomResetBtn').addEventListener('click',()=>{notesZoom=1;notesPanX=42;notesPanY=36;applyNotesTransform();});
+  document.getElementById('notesFocusAllBtn').addEventListener('click',focusAllNotes);
 
   // ---------- DAILY LAUNCH PLAN ----------
   let tasksSection = 'board';
@@ -4808,7 +4822,7 @@
   function switchToNotesView(){
     currentView = 'notes';
     setActiveTab('tabNotesBtn');
-    hideAllViews(); notesOuter.style.display='flex';
+    hideAllViews(); notesOuter.style.display='flex'; requestAnimationFrame(focusAllNotes);
     saveViewState();
     render();
   }
