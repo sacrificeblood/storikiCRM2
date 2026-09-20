@@ -4769,6 +4769,9 @@
     ['tabDashboardBtn','tabReportBtn','tabTasksBtn','tabNotesBtn','tabUniqueBtn','tabCreativeTextsBtn','tabMetaReportBtn'].forEach(btnId=>{
       document.getElementById(btnId).classList.toggle('active', btnId===id);
     });
+    const titles={tabDashboardBtn:'Dashboard',tabReportBtn:'Отчётность',tabTasksBtn:'Задачи',tabNotesBtn:'Заметки',tabUniqueBtn:'Уникализатор',tabCreativeTextsBtn:'Тексты крео',tabMetaReportBtn:'Meta Report Generator'};
+    const pageTitle=document.getElementById('pageTitle');
+    if(pageTitle) pageTitle.textContent=titles[id]||'Storiki CRM';
   }
   function hideAllViews(){
     boardOuter.style.display='none'; tableView.style.display='none';
@@ -4835,6 +4838,13 @@
   document.getElementById('tabUniqueBtn').addEventListener('click', switchToUniqueView);
   document.getElementById('tabCreativeTextsBtn').addEventListener('click', switchToCreativeTextsView);
   document.getElementById('tabMetaReportBtn').addEventListener('click', switchToMetaReportView);
+  const sidebarToggle=document.getElementById('sidebarToggle');
+  try{ if(localStorage.getItem('storiki-sidebar-collapsed')==='1') document.body.classList.add('sidebar-collapsed'); }catch(e){}
+  sidebarToggle.addEventListener('click',()=>{
+    const collapsed=document.body.classList.toggle('sidebar-collapsed');
+    sidebarToggle.setAttribute('aria-label',collapsed?'Развернуть меню':'Свернуть меню');
+    try{ localStorage.setItem('storiki-sidebar-collapsed',collapsed?'1':'0'); }catch(e){}
+  });
 
   function showErrorBanner(message){
     let banner = document.getElementById('errorBanner');
