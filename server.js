@@ -463,7 +463,7 @@ app.post('/api/users', requireRole('admin'), async (req,res)=>{
 
 app.patch('/api/users/:id', requireRole('admin','buyer'), async (req,res)=>{
   try{
-    const target=await pool.query('SELECT id,role,workspace_id FROM users WHERE id=$1',[req.params.id]);
+    const target=await pool.query('SELECT id,email,display_name,role,workspace_id FROM users WHERE id=$1',[req.params.id]);
     if(!target.rows.length) return res.status(404).json({error:'Пользователь не найден'});
     const row=target.rows[0];
     if(req.user.role==='buyer'){
@@ -471,21 +471,49 @@ app.patch('/api/users/:id', requireRole('admin','buyer'), async (req,res)=>{
       const onlyPosition=Object.keys(req.body||{}).every(key=>['x','y'].includes(key));
       if(!isOwnGraphNode || !onlyPosition) return res.status(403).json({error:'Недостаточно прав'});
     }
+    const has=key=>Object.prototype.hasOwnProperty.call(req.body||{},key);
     const permissions=req.body?.permissions && typeof req.body.permissions==='object' ? req.body.permissions : null;
-    const workspaceId=req.body?.workspaceId ? String(req.body.workspaceId) : null;
-    if(permissions && row.role!=='assistant') return res.status(400).json({error:'Права модулей назначаются только ассистенту'});
-    if(workspaceId && row.role==='assistant'){
+    const requestedRole=has('role')?String(req.body.role||''):row.role;
+    const requestedName=has('name')?String(req.body.name||'').trim():row.display_name;
+    const requestedEmail=has('email')?String(req.body.email||'').trim().toLowerCase():row.email;
+    const requestedPassword=has('password')?String(req.body.password||''):'';
+    let workspaceId=has('workspaceId')?String(req.body.workspaceId||''):row.workspace_id;
+    if(req.user.role==='buyer' && (has('name')||has('email')||has('password')||has('role')||has('workspaceId')||has('active')||has('telegramUsername')||permissions)) return res.status(403).json({error:'Управление пользователями доступно только администратору'});
+    if(!['admin','buyer','assistant'].includes(requestedRole)) return res.status(400).json({error:'Недопустимая роль'});
+    if(!requestedName || !/^\S+@\S+\.\S+$/.test(requestedEmail)) return res.status(400).json({error:'Укажите имя и корректный email'});
+    if(requestedPassword && requestedPassword.length<8) return res.status(400).json({error:'Новый пароль должен быть не короче 8 символов'});
+    if(permissions && requestedRole!=='assistant') return res.status(400).json({error:'Права модулей назначаются только ассистенту'});
+    if(row.role==='admin' && requestedRole!=='admin') return res.status(400).json({error:'Роль администратора нельзя изменить'});
+    if(requestedRole==='buyer') workspaceId=row.id;
+    if(requestedRole==='assistant'){
       const buyer=await pool.query(`SELECT id FROM users WHERE id=$1 AND role='buyer'`,[workspaceId]);
       if(!buyer.rows.length) return res.status(400).json({error:'Связать можно только с баером'});
     }
     const graphX=Number.isFinite(req.body?.x)?Math.round(req.body.x):null, graphY=Number.isFinite(req.body?.y)?Math.round(req.body.y):null;
     const active=typeof req.body?.active==='boolean'?req.body.active:null;
-    const hasTelegram=Object.prototype.hasOwnProperty.call(req.body||{},'telegramUsername');
+    const hasTelegram=has('telegramUsername');
     const telegramUsername=hasTelegram?normalizeTelegramUsername(req.body.telegramUsername):null;
     if(hasTelegram && req.body.telegramUsername && !telegramUsername) return res.status(400).json({error:'Telegram-ник: 5–32 символа, только латиница, цифры и _'});
-    await pool.query('UPDATE users SET active=COALESCE($2,active), permissions=COALESCE($3,permissions), workspace_id=COALESCE($4,workspace_id),graph_x=COALESCE($5,graph_x),graph_y=COALESCE($6,graph_y),telegram_username=CASE WHEN $7::boolean THEN $8 ELSE telegram_username END WHERE id=$1',[row.id,active,permissions?JSON.stringify(permissions):null,workspaceId,graphX,graphY,hasTelegram,telegramUsername||null]);
+    if(row.role==='buyer' && requestedRole==='assistant'){
+      const canvasCount=await pool.query('SELECT count(*)::int AS n FROM crm_canvases WHERE owner_id=$1',[row.id]);
+      if(canvasCount.rows[0].n) return res.status(400).json({error:'Сначала перенесите или удалите CRM этого баера'});
+    }
+    await pool.query('UPDATE users SET active=COALESCE($2,active), permissions=COALESCE($3,permissions), workspace_id=$4, graph_x=COALESCE($5,graph_x),graph_y=COALESCE($6,graph_y),telegram_username=CASE WHEN $7::boolean THEN $8 ELSE telegram_username END, display_name=$9, email=$10, role=$11, password_hash=CASE WHEN $12<>\'\' THEN $13 ELSE password_hash END WHERE id=$1',[row.id,active,permissions?JSON.stringify(permissions):null,workspaceId,graphX,graphY,hasTelegram,telegramUsername||null,requestedName,requestedEmail,requestedRole,requestedPassword,requestedPassword?hashPassword(requestedPassword):'']);
+    if(requestedRole==='buyer') await pool.query(`INSERT INTO crm_canvases (id,owner_id,name) VALUES ($1,$1,'Основная CRM') ON CONFLICT DO NOTHING`,[row.id]);
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:'Не удалось обновить пользователя'}); }
+});
+
+app.delete('/api/users/:id', requireRole('admin'), async (req,res)=>{
+  try{
+    const target=await pool.query('SELECT id,role,display_name FROM users WHERE id=$1',[req.params.id]);
+    if(!target.rows.length) return res.status(404).json({error:'Пользователь не найден'});
+    const user=target.rows[0];
+    if(user.id===req.user.id) return res.status(400).json({error:'Нельзя удалить собственную учётную запись'});
+    if(user.role==='admin') return res.status(400).json({error:'Учётные записи администраторов защищены от удаления'});
+    await pool.query('DELETE FROM users WHERE id=$1',[user.id]);
+    res.json({ok:true});
+  }catch(e){ console.error('delete user failed',e); res.status(500).json({error:'Не удалось удалить пользователя'}); }
 });
 
 app.get('/api/telegram-recipients', async (req,res)=>{
