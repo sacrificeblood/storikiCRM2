@@ -20,7 +20,6 @@
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        keepalive: true,
         body: JSON.stringify(data)
       });
       if(!res.ok) throw await responseError(res,'Не удалось сохранить '+type);
