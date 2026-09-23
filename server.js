@@ -179,7 +179,7 @@ function unauthenticated(req,res,message){
 }
 const FEATURE_TYPES={
   dashboard:['layer','fan','cre','link','freg'], notes:['note','noteLink'], tasks:['task'],
-  reports:['spendRevDay','launchPlan'], accs:['accagent','accsoc','acc'], creatives:['creogeo','creocreative'], campaigns:['campgeo','campcampaign','geocipher']
+  reports:['spendRevDay','launchPlan'], accs:['accagent','accsoc','acc'], creatives:['creogeo','creocreative'], campaigns:['campgeo','campcampaign','geocipher'], creativeTexts:['creativeTextDoc']
 };
 function featureForType(type){ return Object.keys(FEATURE_TYPES).find(key=>FEATURE_TYPES[key].includes(type)); }
 function normalizeTelegramUsername(value){
