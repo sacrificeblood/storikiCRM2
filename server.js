@@ -145,7 +145,7 @@ async function seedDefaultDailyTasks(){
   }
 }
 
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '12mb' }));
 
 // ---------- Authentication and workspace isolation ----------
 const SESSION_COOKIE = 'minon_session';
@@ -185,6 +185,34 @@ function featureForType(type){ return Object.keys(FEATURE_TYPES).find(key=>FEATU
 function normalizeTelegramUsername(value){
   const username=String(value||'').trim().replace(/^@+/, '');
   return username && /^[A-Za-z0-9_]{5,32}$/.test(username) ? username : '';
+}
+// PostgreSQL JSONB rejects NUL and unpaired UTF-16 surrogate code units. They are
+// occasionally embedded in copied RTL/Urdu text by ad tools and rich-text pages.
+// Keep every valid Unicode character intact; only remove data JSON cannot represent.
+function normalizeStoredText(value){
+  const source=String(value??'');
+  let result='';
+  for(let i=0;i<source.length;i++){
+    const code=source.charCodeAt(i);
+    if(code===0) continue;
+    if(code>=0xD800 && code<=0xDBFF){
+      const next=source.charCodeAt(i+1);
+      if(next>=0xDC00 && next<=0xDFFF){ result+=source[i]+source[i+1]; i++; }
+      else result+='�';
+      continue;
+    }
+    if(code>=0xDC00 && code<=0xDFFF){ result+='�'; continue; }
+    result+=source[i];
+  }
+  return result.normalize('NFC');
+}
+function normalizeEntityPayload(value){
+  if(typeof value==='string') return normalizeStoredText(value);
+  if(Array.isArray(value)) return value.map(normalizeEntityPayload);
+  if(value && typeof value==='object'){
+    return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,normalizeEntityPayload(item)]));
+  }
+  return value;
 }
 function telegramMention(username){
   const normalized=normalizeTelegramUsername(username);
@@ -540,7 +568,7 @@ app.post('/api/tasks/:id/start-reminder-timer', async (req, res) => {
 app.put('/api/entities/:type/:id', async (req, res) => {
   try{
     const { type, id } = req.params;
-    let data = req.body;
+    let data = normalizeEntityPayload(req.body);
     if(typeof data !== 'object' || data === null) return res.status(400).json({ error: 'body must be a JSON object' });
 
     const workspaceId=workspaceFor(req);
