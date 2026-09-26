@@ -4677,6 +4677,16 @@
 
   // ---------- CREATIVE TEXT DOCS ----------
   let activeTextDocId=null, activeTextVariationId=null, creativeTextSaveTimer=null, creativeTextMode='library';
+  function textDocDateKey(value){
+    const date=new Date(value);
+    if(!Number.isFinite(date.getTime())) return '';
+    const offset=date.getTimezoneOffset()*60000;
+    return new Date(date.getTime()-offset).toISOString().slice(0,10);
+  }
+  function textDocDateLabel(value){
+    const date=new Date(value);
+    return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}).format(date) : 'Дата создания не указана';
+  }
   function textDocById(id){ return (state.creativeTextDocs||[]).find(doc=>doc.id===id); }
   function activeTextDoc(){ return textDocById(activeTextDocId) || (state.creativeTextDocs||[])[0] || null; }
   function activeTextVariation(doc){ return doc && (doc.variations||[]).find(item=>item.id===activeTextVariationId) || (doc&&doc.variations||[])[0] || null; }
@@ -4685,6 +4695,8 @@
   }
   function renderCreativeTexts(){
     const docs=state.creativeTextDocs||[];
+    const dateFilter=document.getElementById('creativeTextDateFilter').value;
+    const filteredDocs=docs.filter(item=>!dateFilter||textDocDateKey(item.createdAt)===dateFilter).sort((a,b)=>Number(b.createdAt||0)-Number(a.createdAt||0));
     const doc=activeTextDoc();
     if(doc) activeTextDocId=doc.id;
     const variation=activeTextVariation(doc);
@@ -4697,7 +4709,7 @@
     document.getElementById('addCreativeTextChildBtn').disabled=!variation;
     document.getElementById('creativeTextLibrary').style.display=creativeTextMode==='library'?'block':'none';
     document.getElementById('creativeTextWorkspace').style.display=creativeTextMode==='editor'&&doc?'block':'none';
-    document.getElementById('creativeTextDocList').innerHTML=docs.length ? docs.map(item=>`<button class="creative-text-doc ${item.id===activeTextDocId?'active':''}" data-text-doc-id="${item.id}" type="button"><span>▤</span>${escapeHtml(item.title||'Без названия')}</button>`).join('') : '<p class="creative-text-muted">Создай первый файл для текстов.</p>';
+    document.getElementById('creativeTextDocList').innerHTML=filteredDocs.length ? filteredDocs.map(item=>`<button class="creative-text-doc ${item.id===activeTextDocId?'active':''}" data-text-doc-id="${item.id}" type="button"><span>▤</span>${escapeHtml(item.title||'Без названия')}<small class="creative-text-doc-created">Создан: ${textDocDateLabel(item.createdAt)}</small></button>`).join('') : `<p class="creative-text-muted">${docs.length?'По выбранной дате файлов нет.':'Создай первый файл для текстов.'}</p>`;
     document.getElementById('creativeTextVariationList').innerHTML=doc ? `<div class="creative-text-tree-title">Вариации</div>${variationTreeHtml(doc.variations||[])||'<p class="creative-text-muted">Добавь первую вариацию.</p>'}` : '';
     const editor=document.getElementById('creativeTextEditor');
     editor.innerHTML=variation ? `<input class="creative-text-title" data-text-edit="title" value="${escapeHtml(variation.title||'Вариация')}" aria-label="Название вариации"><textarea class="creative-text-body" data-text-edit="content" placeholder="Вставь сюда текст для крео…">${escapeHtml(variation.content||'')}</textarea><div class="creative-text-status">Сохраняется автоматически в базе</div>` : '<div class="creative-text-empty"><strong>Выбери или создай вариацию</strong><span>Внутри можно хранить отдельный текст для каждого варианта крео.</span></div>';
@@ -4706,7 +4718,7 @@
     const input=document.getElementById('newCreativeTextDocName');
     const title=input.value.trim();
     if(!title){ showToast('Сначала дай название файлу'); input.focus(); return; }
-    const doc={id:uid(),title,variations:[{id:uid(),title:'Вариация 1',content:'',updatedAt:Date.now()}]};
+    const doc={id:uid(),title,createdAt:Date.now(),variations:[{id:uid(),title:'Вариация 1',content:'',updatedAt:Date.now()}]};
     state.creativeTextDocs.push(doc); activeTextDocId=doc.id; activeTextVariationId=doc.variations[0].id; creativeTextMode='editor'; input.value=''; saveState(true); renderCreativeTexts();
   }
   function createTextVariation(){
@@ -4723,6 +4735,8 @@
   }
   document.getElementById('addCreativeTextDocBtn').addEventListener('click',createTextDocument);
   document.getElementById('newCreativeTextDocName').addEventListener('keydown',event=>{ if(event.key==='Enter') createTextDocument(); });
+  document.getElementById('creativeTextDateFilter').addEventListener('change',renderCreativeTexts);
+  document.getElementById('clearCreativeTextDateFilterBtn').addEventListener('click',()=>{ document.getElementById('creativeTextDateFilter').value=''; renderCreativeTexts(); });
   document.getElementById('addCreativeTextVariationBtn').addEventListener('click',createTextVariation);
   document.getElementById('addCreativeTextChildBtn').addEventListener('click',createTextChildVariation);
   document.getElementById('backToCreativeTextLibraryBtn').addEventListener('click',()=>{ creativeTextMode='library'; renderCreativeTexts(); });
