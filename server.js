@@ -632,13 +632,19 @@ app.put('/api/entities/:type/:id', async (req, res) => {
           remindersEnabled:false
         };
       }else{
-        // Non-admins can move existing cards without changing their content. Buyers
-        // may confirm any task; assistants may additionally confirm daily tasks even
-        // when they have no general Tasks editing grant.
+        // Buyers can move existing cards. Assistants with the Tasks grant can also
+        // edit the title and description, while daily reminder settings remain an
+        // administrator-only workflow.
         const oldData=existing.data||{};
         const nextColumn=String(data.column||oldData.column||'todo');
         if(!Object.prototype.hasOwnProperty.call(TASK_COLUMN_LABELS,nextColumn)) return res.status(400).json({error:'Недопустимый статус задачи'});
-        data={...oldData,column:nextColumn};
+        const assistantCanEditContent=req.user.role==='assistant' && hasEditAccess(req.user,'task');
+        data=assistantCanEditContent ? {
+          ...oldData,
+          title:String(data.title??oldData.title??'').trim(),
+          description:String(data.description??oldData.description??'').trim(),
+          column:nextColumn
+        } : {...oldData,column:nextColumn};
         if(nextColumn==='done'){
           data.completedAt=String(req.body?.completedAt||kyivNow().date);
           if(oldData.dailyReminder){
