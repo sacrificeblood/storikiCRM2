@@ -4007,7 +4007,7 @@
   function tasksData(){ ensureReportsShape(); return state.reports.tasks; }
   function canEditExistingTasks(){
     const user=window.currentUser;
-    return !user || user.role==='admin' || (user.role==='assistant' && !!user.permissions?.tasks);
+    return !user || user.role==='admin' || user.role==='buyer' || (user.role==='assistant' && !!user.permissions?.tasks);
   }
 
   let serverClockOffset = 0;

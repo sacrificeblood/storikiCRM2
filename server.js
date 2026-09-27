@@ -632,14 +632,14 @@ app.put('/api/entities/:type/:id', async (req, res) => {
           remindersEnabled:false
         };
       }else{
-        // Buyers can move existing cards. Assistants with the Tasks grant can also
-        // edit the title and description, while daily reminder settings remain an
+        // Buyers and assistants with the Tasks grant can edit the title and
+        // description of existing cards. Daily reminder settings remain an
         // administrator-only workflow.
         const oldData=existing.data||{};
         const nextColumn=String(data.column||oldData.column||'todo');
         if(!Object.prototype.hasOwnProperty.call(TASK_COLUMN_LABELS,nextColumn)) return res.status(400).json({error:'Недопустимый статус задачи'});
-        const assistantCanEditContent=req.user.role==='assistant' && hasEditAccess(req.user,'task');
-        data=assistantCanEditContent ? {
+        const canEditContent=req.user.role==='buyer' || (req.user.role==='assistant' && hasEditAccess(req.user,'task'));
+        data=canEditContent ? {
           ...oldData,
           title:String(data.title??oldData.title??'').trim(),
           description:String(data.description??oldData.description??'').trim(),
