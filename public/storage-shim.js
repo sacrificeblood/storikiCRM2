@@ -104,12 +104,12 @@
       const canvases=await (await fetch('/api/canvases',{credentials:'include'})).json();
       const available=canvases.canvases||[];
       const stored=localStorage.getItem('minon-active-canvas');
-      const transferredMain=available.some(x=>x.id==='main'&&String(x.owner_name||'').toLowerCase()==='minon');
       const explicitKey=`minon-explicit-canvas:${user.id}`;
       const explicitCanvas=localStorage.getItem(explicitKey);
-      window.activeWorkspace=explicitCanvas&&available.some(x=>x.id===explicitCanvas)?explicitCanvas:(transferredMain?'main':(stored&&available.some(x=>x.id===stored)?stored:(user.role==='admin'?'main':(available[0]?.id||user.workspaceId))));
+      const defaultCanvas=user.role==='admin'&&available.some(x=>x.id==='main')?'main':(available[0]?.id||user.workspaceId);
+      window.activeWorkspace=explicitCanvas&&available.some(x=>x.id===explicitCanvas)?explicitCanvas:(stored&&available.some(x=>x.id===stored)?stored:defaultCanvas);
       localStorage.setItem('minon-active-canvas',window.activeWorkspace);
-      if(user.role==='admin'){
+      if(user.role==='admin'||available.length>1){
         const select=document.getElementById('workspaceSwitcher'); select.style.display='inline-block';
         select.innerHTML=available.map(x=>`<option value="${x.id}">${x.owner_name}: ${x.name}</option>`).join('');
         select.value=window.activeWorkspace;
