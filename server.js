@@ -353,7 +353,7 @@ app.use('/api', async (req,res,next)=>{
   try{
     const found=await pool.query('SELECT owner_id FROM crm_canvases WHERE id=$1',[canvasId]);
     if(!found.rows.length) return res.status(404).json({error:'CRM-полотно не найдено'});
-    if(req.user.role!=='admin' && found.rows[0].owner_id!==req.user.id){
+    if(req.user.role!=='admin' && found.rows[0].owner_id!==req.user.id && found.rows[0].owner_id!==req.user.workspaceId){
       const access=await pool.query('SELECT 1 FROM canvas_access WHERE canvas_id=$1 AND user_id=$2',[canvasId,req.user.id]);
       if(!access.rows.length) return res.status(403).json({error:'Нет доступа к полотну'});
     }
@@ -364,8 +364,8 @@ app.use('/api', async (req,res,next)=>{
 app.get('/api/canvases', async (req,res)=>{
   const sql=req.user.role==='admin'
     ? `SELECT c.*,u.display_name AS owner_name FROM crm_canvases c JOIN users u ON u.id=c.owner_id ORDER BY c.created_at`
-    : `SELECT c.*,u.display_name AS owner_name FROM crm_canvases c JOIN users u ON u.id=c.owner_id WHERE c.owner_id=$1 OR EXISTS(SELECT 1 FROM canvas_access a WHERE a.canvas_id=c.id AND a.user_id=$1) ORDER BY c.created_at`;
-  const result=await pool.query(sql,req.user.role==='admin'?[]:[req.user.id]); res.json({canvases:result.rows});
+    : `SELECT c.*,u.display_name AS owner_name FROM crm_canvases c JOIN users u ON u.id=c.owner_id WHERE c.owner_id=$1 OR c.owner_id=$2 OR EXISTS(SELECT 1 FROM canvas_access a WHERE a.canvas_id=c.id AND a.user_id=$1) ORDER BY c.created_at`;
+  const result=await pool.query(sql,req.user.role==='admin'?[]:[req.user.id,req.user.workspaceId||'']); res.json({canvases:result.rows});
 });
 app.get('/api/canvas-graph', requireRole('admin'), async (req,res)=>{
   const [users,canvases,access]=await Promise.all([
@@ -454,6 +454,7 @@ app.post('/api/users', requireRole('admin'), async (req,res)=>{
       [id,email,displayName,requestedRole,workspaceId,JSON.stringify(permissions),hashPassword(password),telegramUsername||null]
     );
     if(requestedRole==='buyer') await pool.query(`INSERT INTO crm_canvases (id,owner_id,name) VALUES ($1,$1,'Основная CRM') ON CONFLICT DO NOTHING`,[id]);
+    if(requestedRole==='assistant') await pool.query(`INSERT INTO canvas_access (canvas_id,user_id) SELECT id,$1 FROM crm_canvases WHERE owner_id=$2 ON CONFLICT DO NOTHING`,[id,workspaceId]);
     res.status(201).json({user:{id,email,name:displayName,role:requestedRole,workspaceId}});
   }catch(e){
     if(e.code==='23505') return res.status(409).json({error:'Этот email уже используется'});
@@ -500,6 +501,7 @@ app.patch('/api/users/:id', requireRole('admin','buyer'), async (req,res)=>{
     }
     await pool.query('UPDATE users SET active=COALESCE($2,active), permissions=COALESCE($3,permissions), workspace_id=$4, graph_x=COALESCE($5,graph_x),graph_y=COALESCE($6,graph_y),telegram_username=CASE WHEN $7::boolean THEN $8 ELSE telegram_username END, display_name=$9, email=$10, role=$11, password_hash=CASE WHEN $12<>\'\' THEN $13 ELSE password_hash END WHERE id=$1',[row.id,active,permissions?JSON.stringify(permissions):null,workspaceId,graphX,graphY,hasTelegram,telegramUsername||null,requestedName,requestedEmail,requestedRole,requestedPassword,requestedPassword?hashPassword(requestedPassword):'']);
     if(requestedRole==='buyer') await pool.query(`INSERT INTO crm_canvases (id,owner_id,name) VALUES ($1,$1,'Основная CRM') ON CONFLICT DO NOTHING`,[row.id]);
+    if(requestedRole==='assistant') await pool.query(`INSERT INTO canvas_access (canvas_id,user_id) SELECT id,$1 FROM crm_canvases WHERE owner_id=$2 ON CONFLICT DO NOTHING`,[row.id,workspaceId]);
     res.json({ok:true});
   }catch(e){ res.status(500).json({error:'Не удалось обновить пользователя'}); }
 });
